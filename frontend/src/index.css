@@ -1,0 +1,58 @@
+/* 1. Importación base de Tailwind */
+@import "tailwindcss";
+
+/* 2. Animaciones */
+@keyframes float-up {
+  0% { transform: translateY(0) scale(1) rotate(0deg); opacity: 0; }
+  10% { opacity: 1; }
+  100% { transform: translateY(-110vh) scale(0.3) rotate(360deg); opacity: 0; }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { transform: scale(1) translateX(-50%); opacity: 0.3; }
+  50% { transform: scale(1.2) translateX(-50%); opacity: 0.6; }
+}
+
+@keyframes gradient-shift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+}
+
+/* 3. Efectos de Burned */
+.animate-gradient-bg {
+    background: linear-gradient(-45deg, #09090b, #1c0d0a, #121214, #0a0a0a);
+    background-size: 400% 400%;
+    animation: gradient-shift 15s ease infinite;
+}
+
+.flame-glow {
+  position: fixed;
+  bottom: -15%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 120vw;
+  height: 80vh;
+  /* Gradiente más intenso y con más capas de color */
+  background: radial-gradient(circle, 
+    rgba(255, 69, 0, 0.25) 0%, 
+    rgba(249, 115, 22, 0.1) 40%, 
+    rgba(0, 0, 0, 0) 70%);
+  filter: blur(80px);
+  z-index: 0; 
+  pointer-events: none;
+  animation: pulse-glow 6s infinite ease-in-out;
+}
+
+.ember {
+  position: fixed;
+  bottom: -20px;
+  /* Color más vivo: naranja rojizo */
+  background: #ff5e00; 
+  border-radius: 50%;
+  /* Glow externo para que brille */
+  box-shadow: 0 0 10px 2px rgba(255, 81, 0, 0.8), 0 0 4px 1px rgba(255, 255, 255, 0.5);
+  opacity: 0;
+  z-index: 9999; 
+  pointer-events: none;
+}
