@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:latest
+    container_name: mi_mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db 
+
+  
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.0
+    container_name: mi_elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+    ports:
+      - "9200:9200"
+
+  
+  backend:
+    build: 
+      context: . 
+      dockerfile: backend/Dockerfile 
+    container_name: mi_backend
+    ports:
+      - "8080:8080" 
+    env_file:
+      - .env
+    depends_on:
+      - mongodb
+      - elasticsearch
+    volumes:
+      - ./uploads:/app/uploads 
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: mi_frontend
+    ports:
+      - "3000:3000" 
+    depends_on:
+      - backend
+
+volumes:
+  mongo_data:
