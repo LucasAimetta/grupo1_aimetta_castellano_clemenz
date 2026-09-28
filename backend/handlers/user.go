@@ -121,3 +121,29 @@ func (handler *UserHandler) GetUserByName(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, result)
 }
+
+func (handler *UserHandler) UploadProfileImage(c *gin.Context) {
+		file, err := c.FormFile("file")
+		if err != nil {
+			c.JSON(400, gin.H{"error": "No se recibi  el archivo"})
+			return
+		}
+		
+		// Asegurar que la carpeta ./uploads existe
+		os.MkdirAll("./uploads", os.ModePerm)
+
+		// Generar un nombre  nico usando la fecha/hora para que no se sobreescriban
+		filename := fmt.Sprintf("%d_%s", time.Now().Unix(), file.Filename)
+		filepath := "./uploads/" + filename
+
+		// Guardar el archivo en el disco
+		if err := c.SaveUploadedFile(file, filepath); err != nil {
+			c.JSON(500, gin.H{"error": "Error guardando el archivo"})
+			return
+		}
+
+		// Devolver la URL de la imagen local al frontend
+		// Si en producci n usas otro dominio, esto deber a leerse de una variable de entorno.
+		fileURL := fmt.Sprintf("http://localhost:8080/uploads/%s", filename)
+		c.JSON(200, gin.H{"secure_url": fileURL})
+}

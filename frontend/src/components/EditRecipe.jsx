@@ -55,16 +55,18 @@ const EditRecipe = () => {
   }, [id, navigate]);
 
   // --- FUNCIÓN DE SUBIDA ---
-  const uploadToCloudinary = async (file) => {
+const uploadToLocalServer = async (file) => {
     const data = new FormData();
     data.append("file", file);
-    data.append("upload_preset", UPLOAD_PRESET);
-    const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`, { method: "POST", body: data });
-    if (!res.ok) throw new Error("Error subiendo imagen");
-    const fileData = await res.json();
-    return fileData.secure_url;
+    
+    // Usamos tu instancia "api" para mandar el archivo a la nueva ruta de Go
+    const res = await api.post("/upload", data, {
+      headers: { "Content-Type": "multipart/form-data" }
+    });
+    
+    // Devolvemos la URL que gener  nuestro propio backend
+    return res.data.secure_url;
   };
-
   // --- HANDLERS GENERALES ---
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -112,7 +114,7 @@ const EditRecipe = () => {
 
         // Si seleccionó un archivo NUEVO, lo subimos
         if (selectedFile) {
-            finalImageUrl = await uploadToCloudinary(selectedFile);
+            finalImageUrl = await uploadToLocalServer(selectedFile);
         }
 
         const payload = {

@@ -36,7 +36,7 @@ func main() {
 	// CONFIGURACIÓN DE CORS
 	router.Use(cors.New(cors.Config{
 		AllowOrigins: []string{
-			"http://localhost:5173",   // Para tus pruebas locales (Vite)
+			"http://localhost:3000",   // Para tus pruebas locales (Vite)
 			os.Getenv("FRONTEND_URL"), // Tu URL real de producción
 		},
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
@@ -104,6 +104,10 @@ func mappingRoutes() {
 	router.POST("/get-rate/:id", RatingHandler.GetRatingByRecipe)
 	router.GET("/auth/google/login", AuthHandler.GoogleLogin)
 	router.GET("/auth/google/callback", AuthHandler.GoogleCallback)
+
+	router.Static("/uploads", "./uploads")
+
+	router.POST("/upload", UserHandler.UploadProfileImage)
 
 	recipes := router.Group("/recipes")
 	{
