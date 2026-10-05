@@ -1,10 +1,14 @@
 package services
 
 import (
-	"burned/backend/dtos"
-	"burned/backend/repositories"
+	"context"
 	"errors"
+	"log"
 	"time"
+
+	"burned/backend/dtos"
+	"burned/backend/models"
+	"burned/backend/repositories"
 
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
@@ -23,10 +27,19 @@ type RecipeServiceInterface interface {
 type RecipeService struct {
 	recipeRepo repositories.RecipeRepositoryInterface
 	userRepo   repositories.UserRepositoryInterface
+	searchRepo repositories.RecipeSearchRepositoryInterface
 }
 
-func NewRecipeService(repo repositories.RecipeRepositoryInterface, userRepo repositories.UserRepositoryInterface) *RecipeService {
-	return &RecipeService{recipeRepo: repo, userRepo: userRepo}
+func NewRecipeService(
+	repo repositories.RecipeRepositoryInterface,
+	userRepo repositories.UserRepositoryInterface,
+	searchRepo repositories.RecipeSearchRepositoryInterface,
+) *RecipeService {
+	return &RecipeService{
+		recipeRepo: repo,
+		userRepo:   userRepo,
+		searchRepo: searchRepo,
+	}
 }
 
 func (service *RecipeService) CreateRecipe(recipe dtos.RecipeRequest, idUser string) (dtos.RecipeResponse, error) {
@@ -47,15 +60,27 @@ func (service *RecipeService) CreateRecipe(recipe dtos.RecipeRequest, idUser str
 	recipeModel.UserID = oid
 	//añade el id en la bdd al objeto para devolverlo al usuario
 	insertedRecipe, err := service.recipeRepo.CreateRecipe(recipeModel)
+	if err != nil {
+		return dtos.RecipeResponse{}, err
+	}
 	insertedOid, ok := insertedRecipe.InsertedID.(primitive.ObjectID)
 	if !ok {
 		return dtos.RecipeResponse{}, errors.New("invalid id")
 	}
 	recipeModel.ID = insertedOid
+
+	// Sincronizar indexación en Elasticsearch
+	if service.searchRepo != nil {
+		if err := service.searchRepo.IndexRecipe(context.Background(), recipeModel); err != nil {
+			return dtos.RecipeResponse{}, err
+		}
+	}
+
 	recipeResponse := dtos.RecipeModelToResponse(recipeModel)
 	recipeResponse.UserName = user.Name
 	return recipeResponse, nil
 }
+
 func (service *RecipeService) UpdateRecipe(recipe dtos.RecipeRequest, id string, requesterId string, requesterRole string) (dtos.RecipeResponse, error) {
 	if recipe.Description == "" || recipe.DificultyLevel == "" || recipe.Ingredients == nil || recipe.Step == nil || recipe.Title == "" || recipe.TotalTime <= 0 || recipe.Visibility == "" {
 		return dtos.RecipeResponse{}, errors.New("data entered incorrectly")
@@ -89,6 +114,13 @@ func (service *RecipeService) UpdateRecipe(recipe dtos.RecipeRequest, id string,
 		return dtos.RecipeResponse{}, err
 	}
 
+	// Sincronizar actualización en Elasticsearch
+	if service.searchRepo != nil {
+		if err := service.searchRepo.IndexRecipe(context.Background(), recipeModel); err != nil {
+			return dtos.RecipeResponse{}, err
+		}
+	}
+
 	recipeResponse := dtos.RecipeModelToResponse(recipeModel)
 	return recipeResponse, nil
 }
@@ -111,17 +143,42 @@ func (service *RecipeService) DeleteRecipe(id string, requesterId string, reques
 	}
 	//verificamos la cantidad de documentos eliminados, si es 0 ha habido error
 	result, err := service.recipeRepo.DeleteRecipe(oid)
+	if err != nil {
+		return err
+	}
 	if result.DeletedCount == 0 {
 		return errors.New("recipe not found")
 	}
-	return err
+
+	// Sincronizar eliminación en Elasticsearch
+	if service.searchRepo != nil {
+		if err := service.searchRepo.DeleteRecipe(context.Background(), id); err != nil {
+			return err
+	}
+
+	return nil
 }
 
 func (service *RecipeService) GetRecipes(filters dtos.RecipeSearchRequest) ([]dtos.RecipeResponse, error) {
-	result, err := service.recipeRepo.GetRecipes(filters)
-	if err != nil {
-		return []dtos.RecipeResponse{}, errors.New("recipes not found")
+	var result []models.Recipe
+	var err error
+
+	// Intentamos buscar primero en Elasticsearch si el repositorio está disponible
+	if service.searchRepo != nil {
+		result, err = service.searchRepo.SearchRecipes(context.Background(), filters)
 	}
+
+	// Si Elasticsearch falla o no está disponible, usamos MongoDB como fallback de resiliencia
+	if err != nil || service.searchRepo == nil {
+		if err != nil {
+			return []dtos.RecipeResponse{}, err
+		}
+		result, err = service.recipeRepo.GetRecipes(filters)
+		if err != nil {
+			return []dtos.RecipeResponse{}, errors.New("recipes not found")
+		}
+	}
+
 	var recipes []dtos.RecipeResponse
 	for _, recipe := range result {
 		recipes = append(recipes, dtos.RecipeModelToResponse(recipe))

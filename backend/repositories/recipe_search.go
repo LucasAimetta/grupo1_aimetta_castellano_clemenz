@@ -202,3 +202,4 @@ func (r *RecipeSearchRepository) SearchRecipes(ctx context.Context, filters dtos
 
 	return recipes, nil
 }
+
