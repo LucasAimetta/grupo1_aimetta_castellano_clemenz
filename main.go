@@ -55,7 +55,7 @@ func main() {
 
 func dependencies() {
 	var db database.DB
-
+	//esClient := database.NewElasticsearchClient()
 	var (
 		userRepo        repositories.UserRepositoryInterface
 		recipeRepo      repositories.RecipeRepositoryInterface
