@@ -24,7 +24,12 @@ const Navbar = () => {
       ? "bg-white text-black px-4 py-2 rounded-lg font-bold shadow-md transition-all flex items-center gap-2" 
       : "text-zinc-400 hover:bg-zinc-800 hover:text-white px-4 py-2 rounded-lg transition-all flex items-center gap-2";
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await api.post('/logout');
+    } catch (error) {
+      console.error("Error al cerrar sesión en el servidor:", error);
+    }
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     sessionStorage.removeItem('token');

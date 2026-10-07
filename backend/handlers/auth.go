@@ -8,19 +8,23 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/gin-gonic/gin"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 )
 
 type AuthHandler struct {
-	service services.UserServiceInterface
+	service        services.UserServiceInterface
+	sessionService services.SessionServiceInterface
 }
 
-func NewAuthHandler(s services.UserServiceInterface) *AuthHandler {
-	return &AuthHandler{service: s}
+func NewAuthHandler(s services.UserServiceInterface, ss services.SessionServiceInterface) *AuthHandler {
+	return &AuthHandler{
+		service:        s,
+		sessionService: ss,
+	}
 }
 
 var googleOauthConfig = &oauth2.Config{
@@ -51,15 +55,11 @@ func (handler *AuthHandler) LogIn(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"Error": "invalid credentials"})
 		return
 	}
-	oid, error := primitive.ObjectIDFromHex(user.ID)
-	if error != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"Error": "internal server error"})
-		return
-	}
-	// Generar token
-	token, err := auth.GenerateToken(oid, user.Email, user.Role)
+
+	// Generar sesión en Redis
+	token, err := handler.sessionService.CreateSession(c.Request.Context(), user.ID, user.Email, user.Role)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"Error": "error generating the token"})
+		c.JSON(http.StatusInternalServerError, gin.H{"Error": "error al iniciar sesión en Redis"})
 		return
 	}
 
@@ -82,16 +82,10 @@ func (handler *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	oid, error := primitive.ObjectIDFromHex(user.ID)
-	if error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"Error": "internal server error"})
-		return
-	}
-
-	// Generar token
-	token, err := auth.GenerateToken(oid, user.Email, user.Role)
+	// Generar sesión en Redis
+	token, err := handler.sessionService.CreateSession(c.Request.Context(), user.ID, user.Email, user.Role)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"Error": "Error al generar el token"})
+		c.JSON(http.StatusInternalServerError, gin.H{"Error": "Error al generar la sesión en Redis"})
 		return
 	}
 
@@ -147,17 +141,27 @@ func (h *AuthHandler) GoogleCallback(c *gin.Context) {
 		return
 	}
 
-	// 6. Generar JWT
-	objID, _ := primitive.ObjectIDFromHex(userResponse.ID)
-	jwtToken, err := auth.GenerateToken(objID, userResponse.Email, userResponse.Role)
+	// 6. Generar sesión en Redis
+	sessionToken, err := h.sessionService.CreateSession(context.Background(), userResponse.ID, userResponse.Email, userResponse.Role)
 	if err != nil {
-		c.Redirect(http.StatusTemporaryRedirect, frontendURL+"/login?error=token_error")
+		c.Redirect(http.StatusTemporaryRedirect, frontendURL+"/login?error=session_error")
 		return
 	}
 
-	// 7. ÉXITO: Redirigimos al frontend con el token
-	// Esto enviará al usuario a: https://tu-frontend.onrender.com?token=xyz...
-	c.Redirect(http.StatusTemporaryRedirect, frontendURL+"/login?token="+jwtToken)
+	// 7. ÉXITO: Redirigimos al frontend con el token de sesión
+	c.Redirect(http.StatusTemporaryRedirect, frontendURL+"/login?token="+sessionToken)
+}
+
+func (handler *AuthHandler) Logout(c *gin.Context) {
+	authHeader := c.GetHeader("Authorization")
+	if authHeader != "" {
+		tokenParts := strings.Split(authHeader, " ")
+		if len(tokenParts) == 2 && tokenParts[0] == "Bearer" {
+			_ = handler.sessionService.DeleteSession(c.Request.Context(), tokenParts[1])
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Sesión cerrada exitosamente"})
 }
 
 func (handler *AuthHandler) GoogleLogin(c *gin.Context) {

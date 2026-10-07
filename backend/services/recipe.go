@@ -3,7 +3,6 @@ package services
 import (
 	"context"
 	"errors"
-	"log"
 	"time"
 
 	"burned/backend/dtos"
@@ -156,6 +155,7 @@ func (service *RecipeService) DeleteRecipe(id string, requesterId string, reques
 			return err
 	}
 
+	}
 	return nil
 }
 

@@ -2,13 +2,14 @@ package middlewares
 
 import (
 	"burned/backend/auth"
+	"burned/backend/services"
 	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 )
 
-func AuthMiddleware() gin.HandlerFunc {
+func AuthMiddleware(sessionService services.SessionServiceInterface) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
@@ -26,17 +27,29 @@ func AuthMiddleware() gin.HandlerFunc {
 		}
 
 		tokenString := tokenParts[1]
-		claims, err := auth.ValidateToken(tokenString)
-		if err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Token inválido"})
-			c.Abort()
+
+		// 1. Intentar validar sesión activa en Redis
+		session, err := sessionService.GetSession(c.Request.Context(), tokenString)
+		if err == nil && session != nil {
+			c.Set("user_id", session.UserID)
+			c.Set("user_email", session.Email)
+			c.Set("user_role", session.Role)
+			c.Next()
 			return
 		}
 
-		// Inyectar el user_id en el contexto
-		c.Set("user_id", claims.UserID)
-		c.Set("user_email", claims.Email)
-		c.Set("user_role", claims.Role)
-		c.Next()
+		// 2. Fallback para tokens JWT legados durante la migración
+		claims, jwtErr := auth.ValidateToken(tokenString)
+		if jwtErr == nil && claims != nil {
+			c.Set("user_id", claims.UserID)
+			c.Set("user_email", claims.Email)
+			c.Set("user_role", claims.Role)
+			c.Next()
+			return
+		}
+
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Sesión inválida o expirada"})
+		c.Abort()
 	}
 }
+

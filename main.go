@@ -24,6 +24,7 @@ var (
 	AuthHandler        *handlers.AuthHandler
 	RatingHandler      *handlers.RatingHandler
 	CommentHandler     *handlers.CommentHandler
+	SessionService     services.SessionServiceInterface
 )
 
 func main() {
@@ -56,6 +57,8 @@ func main() {
 func dependencies() {
 	var db database.DB
 	esClient := database.NewElasticsearchClient()
+	redisClient := database.NewRedisClient()
+
 	var (
 		userRepo         repositories.UserRepositoryInterface
 		recipeRepo       repositories.RecipeRepositoryInterface
@@ -63,6 +66,7 @@ func dependencies() {
 		savedRecipeRepo  repositories.SavedRecipeRepositoryInterface
 		ratingRepo       repositories.RatingRepositoryInterface
 		commentRepo      repositories.CommentRepositoryInterface
+		sessionRepo      repositories.SessionRepositoryInterface
 	)
 
 	var (
@@ -83,14 +87,18 @@ func dependencies() {
 	recipeSearchRepo = repositories.NewRecipeSearchRepository(esClient)
 	ratingRepo = repositories.NewRatingRepository(db)
 	commentRepo = repositories.NewCommentRepository(db)
+	sessionRepo = repositories.NewSessionRepository(redisClient)
+
 	// Servicios
 	userService = services.NewUserService(userRepo)
 	recipeService = services.NewRecipeService(recipeRepo, userRepo, recipeSearchRepo)
 	savedRecipeService = services.NewSavedRecipeService(savedRecipeRepo, recipeRepo)
 	ratingService = services.NewRatingService(ratingRepo, recipeRepo)
 	commentService = services.NewCommentService(commentRepo, userRepo, recipeRepo)
+	SessionService = services.NewSessionService(sessionRepo)
+
 	// Handlers
-	AuthHandler = handlers.NewAuthHandler(userService)
+	AuthHandler = handlers.NewAuthHandler(userService, SessionService)
 	RecipeHandler = handlers.NewRecipeHandler(recipeService)
 	SavedRecipeHandler = handlers.NewSavedRecipeHandler(savedRecipeService)
 	UserHandler = handlers.NewUserHandler(userService)
@@ -124,8 +132,9 @@ func mappingRoutes() {
 
 	// --- RUTAS PRIVADAS
 	priv := router.Group("/")
-	priv.Use(middlewares.AuthMiddleware())
+	priv.Use(middlewares.AuthMiddleware(SessionService))
 	{
+		priv.POST("/logout", AuthHandler.Logout)
 
 		priv.PUT("/user", UserHandler.UpdateUser)
 		priv.PUT("/user/password", UserHandler.UpdatePassword)

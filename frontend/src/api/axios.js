@@ -1,8 +1,8 @@
 import axios from 'axios';
 
 const api = axios.create({
-  // Cambia localhost por tu URL de producción
-  baseURL: 'https://burned.onrender.com', 
+  //baseURL: 'https://burned.onrender.com', 
+  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8080', 
 });
 
 api.interceptors.request.use(

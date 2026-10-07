@@ -8,6 +8,7 @@ RUN go mod download
 
 COPY . .
 
+RUN go mod tidy
 RUN go build -o api-server main.go
 
 EXPOSE 8080

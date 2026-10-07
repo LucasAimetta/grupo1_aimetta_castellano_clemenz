@@ -109,7 +109,9 @@ const Login = () => {
   };
 
   const handleGoogleLogin = () => {
-    window.location.href = "https://burned.onrender.com/auth/google/login";
+     //window.location.href = "https://burned.onrender.com/auth/google/login";
+    const backendURL = api.defaults.baseURL || 'http://localhost:8080';
+    window.location.href = `${backendURL}/auth/google/login`;
   };
 
   // Función para manejar el modo invitado

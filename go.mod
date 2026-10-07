@@ -8,6 +8,7 @@ require (
 	github.com/joho/godotenv v1.5.1
 	go.mongodb.org/mongo-driver v1.17.6
 	golang.org/x/crypto v0.40.0
+	github.com/redis/go-redis/v9 v9.7.1
 )
 
 require (
