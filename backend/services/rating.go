@@ -4,6 +4,7 @@ import (
 	"burned/backend/dtos"
 	"burned/backend/models"
 	"burned/backend/repositories"
+	"context"
 	"errors"
 	"time"
 
@@ -18,11 +19,18 @@ type RatingServiceInterface interface {
 type RatingService struct {
 	ratingRepository repositories.RatingRepositoryInterface
 	recipeRepository repositories.RecipeRepositoryInterface
+	cacheRepository  repositories.RecipeCacheRepositoryInterface
 }
 
-func NewRatingService(repository repositories.RatingRepositoryInterface, recipeRepository repositories.RecipeRepositoryInterface) *RatingService {
-	return &RatingService{ratingRepository: repository,
+func NewRatingService(
+	repository repositories.RatingRepositoryInterface,
+	recipeRepository repositories.RecipeRepositoryInterface,
+	cacheRepository repositories.RecipeCacheRepositoryInterface,
+) *RatingService {
+	return &RatingService{
+		ratingRepository: repository,
 		recipeRepository: recipeRepository,
+		cacheRepository:  cacheRepository,
 	}
 }
 func (service *RatingService) RateRecipe(dto dtos.RateRecipeRequest, recipeId string, userId string) (dtos.RateRecipeResponse, error) {
@@ -64,6 +72,13 @@ func (service *RatingService) RateRecipe(dto dtos.RateRecipeRequest, recipeId st
 	if err != nil {
 		return dtos.RateRecipeResponse{}, errors.New("Internal server error")
 	}
+
+	// Invalidar caché tras actualizar calificación
+	if service.cacheRepository != nil {
+		_ = service.cacheRepository.DeleteRecipe(context.Background(), recipeId)
+		_ = service.cacheRepository.DeleteTopRecipes(context.Background())
+	}
+
 	response := dtos.RatingModelToResponse(result)
 	return response, nil
 }

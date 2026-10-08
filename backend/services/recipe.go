@@ -3,6 +3,8 @@ package services
 import (
 	"context"
 	"errors"
+	"os"
+	"strconv"
 	"time"
 
 	"burned/backend/dtos"
@@ -27,17 +29,37 @@ type RecipeService struct {
 	recipeRepo repositories.RecipeRepositoryInterface
 	userRepo   repositories.UserRepositoryInterface
 	searchRepo repositories.RecipeSearchRepositoryInterface
+	cacheRepo  repositories.RecipeCacheRepositoryInterface
+
+	recipeTTL      time.Duration
+	userRecipesTTL time.Duration
+	topRecipesTTL  time.Duration
+	allRecipesTTL  time.Duration
+}
+
+func parseTTLFromEnv(envVar string, defaultMinutes int) time.Duration {
+	mins, err := strconv.Atoi(os.Getenv(envVar))
+	if err != nil || mins <= 0 {
+		mins = defaultMinutes
+	}
+	return time.Duration(mins) * time.Minute
 }
 
 func NewRecipeService(
 	repo repositories.RecipeRepositoryInterface,
 	userRepo repositories.UserRepositoryInterface,
 	searchRepo repositories.RecipeSearchRepositoryInterface,
+	cacheRepo repositories.RecipeCacheRepositoryInterface,
 ) *RecipeService {
 	return &RecipeService{
-		recipeRepo: repo,
-		userRepo:   userRepo,
-		searchRepo: searchRepo,
+		recipeRepo:     repo,
+		userRepo:       userRepo,
+		searchRepo:     searchRepo,
+		cacheRepo:      cacheRepo,
+		recipeTTL:      parseTTLFromEnv("CACHE_RECIPE_TTL_MINUTES", 30),
+		userRecipesTTL: parseTTLFromEnv("CACHE_USER_RECIPES_TTL_MINUTES", 15),
+		topRecipesTTL:  parseTTLFromEnv("CACHE_TOP_RECIPES_TTL_MINUTES", 5),
+		allRecipesTTL:  parseTTLFromEnv("CACHE_ALL_RECIPES_TTL_MINUTES", 10),
 	}
 }
 
@@ -73,6 +95,12 @@ func (service *RecipeService) CreateRecipe(recipe dtos.RecipeRequest, idUser str
 		if err := service.searchRepo.IndexRecipe(context.Background(), recipeModel); err != nil {
 			return dtos.RecipeResponse{}, err
 		}
+	}
+
+	// Invalidar caché tras creación
+	if service.cacheRepo != nil {
+		_ = service.cacheRepo.DeleteUserRecipes(context.Background(), idUser)
+		_ = service.cacheRepo.DeleteAllRecipes(context.Background())
 	}
 
 	recipeResponse := dtos.RecipeModelToResponse(recipeModel)
@@ -120,6 +148,14 @@ func (service *RecipeService) UpdateRecipe(recipe dtos.RecipeRequest, id string,
 		}
 	}
 
+	// Invalidar caché tras actualización
+	if service.cacheRepo != nil {
+		_ = service.cacheRepo.DeleteRecipe(context.Background(), id)
+		_ = service.cacheRepo.DeleteUserRecipes(context.Background(), currentRecipe.UserID.Hex())
+		_ = service.cacheRepo.DeleteTopRecipes(context.Background())
+		_ = service.cacheRepo.DeleteAllRecipes(context.Background())
+	}
+
 	recipeResponse := dtos.RecipeModelToResponse(recipeModel)
 	return recipeResponse, nil
 }
@@ -153,8 +189,15 @@ func (service *RecipeService) DeleteRecipe(id string, requesterId string, reques
 	if service.searchRepo != nil {
 		if err := service.searchRepo.DeleteRecipe(context.Background(), id); err != nil {
 			return err
+		}
 	}
 
+	// Invalidar caché tras eliminación
+	if service.cacheRepo != nil {
+		_ = service.cacheRepo.DeleteRecipe(context.Background(), id)
+		_ = service.cacheRepo.DeleteUserRecipes(context.Background(), currentRecipe.UserID.Hex())
+		_ = service.cacheRepo.DeleteTopRecipes(context.Background())
+		_ = service.cacheRepo.DeleteAllRecipes(context.Background())
 	}
 	return nil
 }
@@ -191,6 +234,15 @@ func (service *RecipeService) GetRecipeById(id string) (dtos.RecipeResponse, err
 	if ok != nil {
 		return dtos.RecipeResponse{}, errors.New("invalid id")
 	}
+
+	// 1. Intentar obtener desde caché
+	if service.cacheRepo != nil {
+		if cached, err := service.cacheRepo.GetRecipe(context.Background(), id); err == nil && cached != nil {
+			return *cached, nil
+		}
+	}
+
+	// 2. Si no está en caché (o falló Redis), buscar en base de datos
 	result, err := service.recipeRepo.GetRecipeById(oid)
 	if err != nil {
 		return dtos.RecipeResponse{}, err
@@ -202,14 +254,29 @@ func (service *RecipeService) GetRecipeById(id string) (dtos.RecipeResponse, err
 	} else {
 		response.UserName = "Unknown"
 	}
-	return response, nil
 
+	// 3. Guardar en caché con TTL configurable
+	if service.cacheRepo != nil {
+		_ = service.cacheRepo.SetRecipe(context.Background(), id, response, service.recipeTTL)
+	}
+
+	return response, nil
 }
+
 func (service *RecipeService) GetRecipesByUser(id string) ([]dtos.RecipeResponse, error) {
 	oid, ok := primitive.ObjectIDFromHex(id)
 	if ok != nil {
 		return []dtos.RecipeResponse{}, errors.New("invalid id")
 	}
+
+	// 1. Intentar obtener desde caché (aislado por usuario)
+	if service.cacheRepo != nil {
+		if cached, err := service.cacheRepo.GetUserRecipes(context.Background(), id); err == nil && cached != nil {
+			return cached, nil
+		}
+	}
+
+	// 2. Si no está en caché, consultar base de datos
 	result, err := service.recipeRepo.GetRecipesByUser(oid)
 	if err != nil {
 		return []dtos.RecipeResponse{}, errors.New("recipes not found")
@@ -218,11 +285,23 @@ func (service *RecipeService) GetRecipesByUser(id string) ([]dtos.RecipeResponse
 	for _, recipe := range result {
 		recipes = append(recipes, dtos.RecipeModelToResponse(recipe))
 	}
+
+	// 3. Guardar en caché con TTL configurable
+	if service.cacheRepo != nil {
+		_ = service.cacheRepo.SetUserRecipes(context.Background(), id, recipes, service.userRecipesTTL)
+	}
+
 	return recipes, nil
 }
 
 func (service *RecipeService) GetAll() ([]dtos.RecipeResponse, error) {
-	// Aquí podrías agregar lógica extra si fuera necesario antes de llamar a la DB
+	// 1. Intentar obtener desde caché
+	if service.cacheRepo != nil {
+		if cached, err := service.cacheRepo.GetAllRecipes(context.Background()); err == nil && cached != nil {
+			return cached, nil
+		}
+	}
+
 	result, err := service.recipeRepo.GetAll()
 	if err != nil {
 		return []dtos.RecipeResponse{}, errors.New("recipes not found")
@@ -231,10 +310,23 @@ func (service *RecipeService) GetAll() ([]dtos.RecipeResponse, error) {
 	for _, recipe := range result {
 		recipes = append(recipes, dtos.RecipeModelToResponse(recipe))
 	}
+
+	// 2. Guardar en caché con TTL configurable
+	if service.cacheRepo != nil {
+		_ = service.cacheRepo.SetAllRecipes(context.Background(), recipes, service.allRecipesTTL)
+	}
+
 	return recipes, nil
 }
 
 func (service *RecipeService) GetTopRecipes() ([]dtos.RecipeResponse, error) {
+	// 1. Intentar obtener desde caché
+	if service.cacheRepo != nil {
+		if cached, err := service.cacheRepo.GetTopRecipes(context.Background()); err == nil && cached != nil {
+			return cached, nil
+		}
+	}
+
 	// Pedimos solo las 5 mejores
 	result, err := service.recipeRepo.GetTopRecipesLimit(5)
 	if err != nil {
@@ -245,5 +337,11 @@ func (service *RecipeService) GetTopRecipes() ([]dtos.RecipeResponse, error) {
 	for _, recipe := range result {
 		recipes = append(recipes, dtos.RecipeModelToResponse(recipe))
 	}
+
+	// 2. Guardar en caché con TTL configurable
+	if service.cacheRepo != nil {
+		_ = service.cacheRepo.SetTopRecipes(context.Background(), recipes, service.topRecipesTTL)
+	}
+
 	return recipes, nil
 }

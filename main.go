@@ -67,6 +67,7 @@ func dependencies() {
 		ratingRepo       repositories.RatingRepositoryInterface
 		commentRepo      repositories.CommentRepositoryInterface
 		sessionRepo      repositories.SessionRepositoryInterface
+		recipeCacheRepo  repositories.RecipeCacheRepositoryInterface
 	)
 
 	var (
@@ -88,12 +89,13 @@ func dependencies() {
 	ratingRepo = repositories.NewRatingRepository(db)
 	commentRepo = repositories.NewCommentRepository(db)
 	sessionRepo = repositories.NewSessionRepository(redisClient)
+	recipeCacheRepo = repositories.NewRecipeCacheRepository(redisClient)
 
 	// Servicios
 	userService = services.NewUserService(userRepo)
-	recipeService = services.NewRecipeService(recipeRepo, userRepo, recipeSearchRepo)
+	recipeService = services.NewRecipeService(recipeRepo, userRepo, recipeSearchRepo, recipeCacheRepo)
 	savedRecipeService = services.NewSavedRecipeService(savedRecipeRepo, recipeRepo)
-	ratingService = services.NewRatingService(ratingRepo, recipeRepo)
+	ratingService = services.NewRatingService(ratingRepo, recipeRepo, recipeCacheRepo)
 	commentService = services.NewCommentService(commentRepo, userRepo, recipeRepo)
 	SessionService = services.NewSessionService(sessionRepo)
 
