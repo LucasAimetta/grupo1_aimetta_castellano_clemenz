@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -18,11 +19,23 @@ func NewRedisClient() *redis.Client {
 
 	redisPassword := os.Getenv("REDIS_PASSWORD")
 
-	client := redis.NewClient(&redis.Options{
-		Addr:     redisAddr,
-		Password: redisPassword,
-		DB:       0,
-	})
+	var client *redis.Client
+	if strings.HasPrefix(redisAddr, "redis://") || strings.HasPrefix(redisAddr, "rediss://") {
+		opt, err := redis.ParseURL(redisAddr)
+		if err != nil {
+			log.Fatalf("Error analizando REDIS_URL: %v", err)
+		}
+		if redisPassword != "" {
+			opt.Password = redisPassword
+		}
+		client = redis.NewClient(opt)
+	} else {
+		client = redis.NewClient(&redis.Options{
+			Addr:     redisAddr,
+			Password: redisPassword,
+			DB:       0,
+		})
+	}
 
 	maxAttempts := 15
 	log.Printf("Intentando conectar con Redis en %s...", redisAddr)

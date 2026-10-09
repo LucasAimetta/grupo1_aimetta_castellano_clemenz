@@ -176,6 +176,7 @@ func (service *UserService) LoginOrRegisterGoogle(dto dtos.GoogleUserDTO) (dtos.
 		if err != nil {
 			// Si no existe de ninguna forma, lo creamos
 			newUser := models.User{
+				ID:        primitive.NewObjectID(),
 				Email:     dto.Email,
 				Name:      dto.Name,
 				GoogleID:  dto.GoogleID,
