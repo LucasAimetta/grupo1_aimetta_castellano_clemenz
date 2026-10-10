@@ -68,6 +68,7 @@ func dependencies() {
 		commentRepo      repositories.CommentRepositoryInterface
 		sessionRepo      repositories.SessionRepositoryInterface
 		recipeCacheRepo  repositories.RecipeCacheRepositoryInterface
+		syncRepo         repositories.SyncRepositoryInterface
 	)
 
 	var (
@@ -76,6 +77,7 @@ func dependencies() {
 		savedRecipeService services.SavedRecipeServiceInterface
 		ratingService      services.RatingServiceInterface
 		commentService     services.CommentServiceInterface
+		recipeSyncService  services.RecipeSyncServiceInterface
 	)
 
 	// Conexión a base de datos
@@ -90,14 +92,22 @@ func dependencies() {
 	commentRepo = repositories.NewCommentRepository(db)
 	sessionRepo = repositories.NewSessionRepository(redisClient)
 	recipeCacheRepo = repositories.NewRecipeCacheRepository(redisClient)
+	syncRepo = repositories.NewSyncRepository(redisClient)
 
 	// Servicios
 	userService = services.NewUserService(userRepo)
-	recipeService = services.NewRecipeService(recipeRepo, userRepo, recipeSearchRepo, recipeCacheRepo)
+	recipeService = services.NewRecipeService(recipeRepo, userRepo, recipeSearchRepo, recipeCacheRepo, syncRepo)
 	savedRecipeService = services.NewSavedRecipeService(savedRecipeRepo, recipeRepo)
 	ratingService = services.NewRatingService(ratingRepo, recipeRepo, recipeCacheRepo)
 	commentService = services.NewCommentService(commentRepo, userRepo, recipeRepo)
 	SessionService = services.NewSessionService(sessionRepo)
+	recipeSyncService = services.NewRecipeSyncService(recipeRepo, recipeSearchRepo, syncRepo)
+
+	// Iniciar Job Periódico (Cron) de sincronización hacia Elasticsearch
+	_, err := recipeSyncService.StartCronJob(os.Getenv("RECIPE_SYNC_CRON"))
+	if err != nil {
+		log.Printf("⚠️ Error iniciando cron de sincronización de recetas: %v", err)
+	}
 
 	// Handlers
 	AuthHandler = handlers.NewAuthHandler(userService, SessionService)

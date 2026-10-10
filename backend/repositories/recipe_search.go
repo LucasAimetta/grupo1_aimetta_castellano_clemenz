@@ -17,6 +17,8 @@ import (
 type RecipeSearchRepositoryInterface interface {
 	IndexRecipe(ctx context.Context, recipe models.Recipe) error
 	DeleteRecipe(ctx context.Context, id string) error
+	BulkIndexRecipes(ctx context.Context, recipes []models.Recipe) error
+	BulkDeleteRecipes(ctx context.Context, ids []string) error
 	SearchRecipes(ctx context.Context, filters dtos.RecipeSearchRequest) ([]models.Recipe, error)
 }
 
@@ -71,6 +73,70 @@ func (r *RecipeSearchRepository) DeleteRecipe(ctx context.Context, id string) er
 	// Si no existe (404), no lo consideramos error crítico
 	if res.IsError() && res.StatusCode != 404 {
 		return fmt.Errorf("error en respuesta de Elasticsearch al eliminar: %s", res.String())
+	}
+
+	return nil
+}
+
+// BulkIndexRecipes indexa o actualiza múltiples recetas en una sola petición a Elasticsearch
+func (r *RecipeSearchRepository) BulkIndexRecipes(ctx context.Context, recipes []models.Recipe) error {
+	if len(recipes) == 0 {
+		return nil
+	}
+
+	var buf bytes.Buffer
+	for _, recipe := range recipes {
+		meta := fmt.Sprintf(`{"index":{"_index":"recipes","_id":"%s"}}%s`, recipe.ID.Hex(), "\n")
+		data, err := json.Marshal(recipe)
+		if err != nil {
+			return fmt.Errorf("error serializando receta para bulk: %w", err)
+		}
+		buf.WriteString(meta)
+		buf.Write(data)
+		buf.WriteString("\n")
+	}
+
+	res, err := r.es.Bulk(
+		bytes.NewReader(buf.Bytes()),
+		r.es.Bulk.WithContext(ctx),
+		r.es.Bulk.WithRefresh("true"),
+	)
+	if err != nil {
+		return fmt.Errorf("error en bulk index de Elasticsearch: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return fmt.Errorf("error en respuesta bulk de Elasticsearch al indexar: %s", res.String())
+	}
+
+	return nil
+}
+
+// BulkDeleteRecipes elimina múltiples recetas de Elasticsearch en una sola petición bulk
+func (r *RecipeSearchRepository) BulkDeleteRecipes(ctx context.Context, ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+
+	var buf bytes.Buffer
+	for _, id := range ids {
+		meta := fmt.Sprintf(`{"delete":{"_index":"recipes","_id":"%s"}}%s`, id, "\n")
+		buf.WriteString(meta)
+	}
+
+	res, err := r.es.Bulk(
+		bytes.NewReader(buf.Bytes()),
+		r.es.Bulk.WithContext(ctx),
+		r.es.Bulk.WithRefresh("true"),
+	)
+	if err != nil {
+		return fmt.Errorf("error en bulk delete de Elasticsearch: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return fmt.Errorf("error en respuesta bulk de Elasticsearch al eliminar: %s", res.String())
 	}
 
 	return nil

@@ -10,6 +10,7 @@ require (
 	github.com/redis/go-redis/v9 v9.7.1
 	go.mongodb.org/mongo-driver v1.17.6
 	golang.org/x/crypto v0.40.0
+	github.com/robfig/cron/v3 v3.0.1
 )
 
 require (

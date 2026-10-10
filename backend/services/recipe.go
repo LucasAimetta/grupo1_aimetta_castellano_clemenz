@@ -30,6 +30,7 @@ type RecipeService struct {
 	userRepo   repositories.UserRepositoryInterface
 	searchRepo repositories.RecipeSearchRepositoryInterface
 	cacheRepo  repositories.RecipeCacheRepositoryInterface
+	syncRepo   repositories.SyncRepositoryInterface
 
 	recipeTTL      time.Duration
 	userRecipesTTL time.Duration
@@ -50,12 +51,14 @@ func NewRecipeService(
 	userRepo repositories.UserRepositoryInterface,
 	searchRepo repositories.RecipeSearchRepositoryInterface,
 	cacheRepo repositories.RecipeCacheRepositoryInterface,
+	syncRepo repositories.SyncRepositoryInterface,
 ) *RecipeService {
 	return &RecipeService{
 		recipeRepo:     repo,
 		userRepo:       userRepo,
 		searchRepo:     searchRepo,
 		cacheRepo:      cacheRepo,
+		syncRepo:       syncRepo,
 		recipeTTL:      parseTTLFromEnv("CACHE_RECIPE_TTL_MINUTES", 30),
 		userRecipesTTL: parseTTLFromEnv("CACHE_USER_RECIPES_TTL_MINUTES", 15),
 		topRecipesTTL:  parseTTLFromEnv("CACHE_TOP_RECIPES_TTL_MINUTES", 5),
@@ -90,12 +93,7 @@ func (service *RecipeService) CreateRecipe(recipe dtos.RecipeRequest, idUser str
 	}
 	recipeModel.ID = insertedOid
 
-	// Sincronizar indexación en Elasticsearch
-	if service.searchRepo != nil {
-		if err := service.searchRepo.IndexRecipe(context.Background(), recipeModel); err != nil {
-			return dtos.RecipeResponse{}, err
-		}
-	}
+	// La indexación en Elasticsearch se realiza de forma incremental mediante el Cron Job periódico
 
 	// Invalidar caché tras creación
 	if service.cacheRepo != nil {
@@ -141,12 +139,7 @@ func (service *RecipeService) UpdateRecipe(recipe dtos.RecipeRequest, id string,
 		return dtos.RecipeResponse{}, err
 	}
 
-	// Sincronizar actualización en Elasticsearch
-	if service.searchRepo != nil {
-		if err := service.searchRepo.IndexRecipe(context.Background(), recipeModel); err != nil {
-			return dtos.RecipeResponse{}, err
-		}
-	}
+	// La actualización en Elasticsearch se realiza de forma incremental mediante el Cron Job periódico
 
 	// Invalidar caché tras actualización
 	if service.cacheRepo != nil {
@@ -185,11 +178,9 @@ func (service *RecipeService) DeleteRecipe(id string, requesterId string, reques
 		return errors.New("recipe not found")
 	}
 
-	// Sincronizar eliminación en Elasticsearch
-	if service.searchRepo != nil {
-		if err := service.searchRepo.DeleteRecipe(context.Background(), id); err != nil {
-			return err
-		}
+	// Encolar ID en Redis para que el Cron Job lo elimine de Elasticsearch de forma asíncrona
+	if service.syncRepo != nil {
+		_ = service.syncRepo.AddDeletedRecipeID(context.Background(), id)
 	}
 
 	// Invalidar caché tras eliminación

@@ -22,6 +22,7 @@ type RecipeRepositoryInterface interface {
 	GetRecipesByUser(id primitive.ObjectID) ([]models.Recipe, error)
 	GetAll() ([]models.Recipe, error)
 	GetTopRecipesLimit(limit int) ([]models.Recipe, error)
+	GetRecipesUpdatedAfter(ctx context.Context, since time.Time) ([]models.Recipe, error)
 }
 
 type RecipeRepository struct {
@@ -196,6 +197,28 @@ func (repository *RecipeRepository) GetTopRecipesLimit(limit int) ([]models.Reci
 	filter := bson.M{"visibility": "public"}
 
 	cursor, err := collection.Find(ctx, filter, opts)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var recipes []models.Recipe
+	if err = cursor.All(ctx, &recipes); err != nil {
+		return nil, err
+	}
+
+	return recipes, nil
+}
+
+func (repository *RecipeRepository) GetRecipesUpdatedAfter(ctx context.Context, since time.Time) ([]models.Recipe, error) {
+	collection := repository.db.GetClient().Database("Burned").Collection("Recipe")
+
+	filter := bson.M{}
+	if !since.IsZero() {
+		filter["updatedAt"] = bson.M{"$gt": since}
+	}
+
+	cursor, err := collection.Find(ctx, filter)
 	if err != nil {
 		return nil, err
 	}
