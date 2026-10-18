@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"errors"
+	"log"
 	"os"
 	"strconv"
 	"time"
@@ -26,11 +27,12 @@ type RecipeServiceInterface interface {
 }
 
 type RecipeService struct {
-	recipeRepo repositories.RecipeRepositoryInterface
-	userRepo   repositories.UserRepositoryInterface
-	searchRepo repositories.RecipeSearchRepositoryInterface
-	cacheRepo  repositories.RecipeCacheRepositoryInterface
-	syncRepo   repositories.SyncRepositoryInterface
+	recipeRepo        repositories.RecipeRepositoryInterface
+	userRepo          repositories.UserRepositoryInterface
+	searchRepo        repositories.RecipeSearchRepositoryInterface
+	cacheRepo         repositories.RecipeCacheRepositoryInterface
+	syncRepo          repositories.SyncRepositoryInterface
+	deletedRecipeRepo repositories.DeletedRecipeRepositoryInterface
 
 	recipeTTL      time.Duration
 	userRecipesTTL time.Duration
@@ -52,17 +54,19 @@ func NewRecipeService(
 	searchRepo repositories.RecipeSearchRepositoryInterface,
 	cacheRepo repositories.RecipeCacheRepositoryInterface,
 	syncRepo repositories.SyncRepositoryInterface,
+	deletedRecipeRepo repositories.DeletedRecipeRepositoryInterface,
 ) *RecipeService {
 	return &RecipeService{
-		recipeRepo:     repo,
-		userRepo:       userRepo,
-		searchRepo:     searchRepo,
-		cacheRepo:      cacheRepo,
-		syncRepo:       syncRepo,
-		recipeTTL:      parseTTLFromEnv("CACHE_RECIPE_TTL_MINUTES", 30),
-		userRecipesTTL: parseTTLFromEnv("CACHE_USER_RECIPES_TTL_MINUTES", 15),
-		topRecipesTTL:  parseTTLFromEnv("CACHE_TOP_RECIPES_TTL_MINUTES", 5),
-		allRecipesTTL:  parseTTLFromEnv("CACHE_ALL_RECIPES_TTL_MINUTES", 10),
+		recipeRepo:        repo,
+		userRepo:          userRepo,
+		searchRepo:        searchRepo,
+		cacheRepo:         cacheRepo,
+		syncRepo:          syncRepo,
+		deletedRecipeRepo: deletedRecipeRepo,
+		recipeTTL:         parseTTLFromEnv("CACHE_RECIPE_TTL_MINUTES", 30),
+		userRecipesTTL:    parseTTLFromEnv("CACHE_USER_RECIPES_TTL_MINUTES", 15),
+		topRecipesTTL:     parseTTLFromEnv("CACHE_TOP_RECIPES_TTL_MINUTES", 5),
+		allRecipesTTL:     parseTTLFromEnv("CACHE_ALL_RECIPES_TTL_MINUTES", 10),
 	}
 }
 
@@ -93,7 +97,16 @@ func (service *RecipeService) CreateRecipe(recipe dtos.RecipeRequest, idUser str
 	}
 	recipeModel.ID = insertedOid
 
-	// La indexación en Elasticsearch se realiza de forma incremental mediante el Cron Job periódico
+	// Indexar inmediatamente en Elasticsearch para disponibilidad en tiempo real
+	if service.searchRepo != nil {
+		go func(r models.Recipe) {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := service.searchRepo.IndexRecipe(ctx, r); err != nil {
+				log.Printf("⚠️ [IndexRecipe] Error indexando receta '%s' en Elasticsearch: %v", r.ID.Hex(), err)
+			}
+		}(recipeModel)
+	}
 
 	// Invalidar caché tras creación
 	if service.cacheRepo != nil {
@@ -139,7 +152,16 @@ func (service *RecipeService) UpdateRecipe(recipe dtos.RecipeRequest, id string,
 		return dtos.RecipeResponse{}, err
 	}
 
-	// La actualización en Elasticsearch se realiza de forma incremental mediante el Cron Job periódico
+	// Actualizar inmediatamente en Elasticsearch para disponibilidad en tiempo real
+	if service.searchRepo != nil {
+		go func(r models.Recipe) {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := service.searchRepo.IndexRecipe(ctx, r); err != nil {
+				log.Printf("⚠️ [IndexRecipe] Error actualizando receta '%s' en Elasticsearch: %v", r.ID.Hex(), err)
+			}
+		}(recipeModel)
+	}
 
 	// Invalidar caché tras actualización
 	if service.cacheRepo != nil {
@@ -178,7 +200,25 @@ func (service *RecipeService) DeleteRecipe(id string, requesterId string, reques
 		return errors.New("recipe not found")
 	}
 
-	// Encolar ID en Redis para que el Cron Job lo elimine de Elasticsearch de forma asíncrona
+	// Eliminar inmediatamente de Elasticsearch
+	if service.searchRepo != nil {
+		go func(recipeID string) {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := service.searchRepo.DeleteRecipe(ctx, recipeID); err != nil {
+				log.Printf("⚠️ [DeleteRecipe] Error eliminando receta '%s' de Elasticsearch: %v", recipeID, err)
+			}
+		}(id)
+	}
+
+	// Persistir en MongoDB (colección DeletedRecipes) con process = false para garantizar durabilidad si Redis o ES fallan
+	if service.deletedRecipeRepo != nil {
+		if err := service.deletedRecipeRepo.AddDeletedRecipe(context.Background(), id); err != nil {
+			log.Printf("⚠️ [DeleteRecipe] Error registrando receta eliminada en MongoDB: %v", err)
+		}
+	}
+
+	// Encolar ID en Redis para que el Cron Job asegure la eliminación
 	if service.syncRepo != nil {
 		_ = service.syncRepo.AddDeletedRecipeID(context.Background(), id)
 	}
@@ -200,13 +240,13 @@ func (service *RecipeService) GetRecipes(filters dtos.RecipeSearchRequest) ([]dt
 	// Intentamos buscar primero en Elasticsearch si el repositorio está disponible
 	if service.searchRepo != nil {
 		result, err = service.searchRepo.SearchRecipes(context.Background(), filters)
+		if err != nil {
+			log.Printf("⚠️ Error consultando Elasticsearch: %v. Activando fallback a MongoDB...", err)
+		}
 	}
 
 	// Si Elasticsearch falla o no está disponible, usamos MongoDB como fallback de resiliencia
 	if err != nil || service.searchRepo == nil {
-		if err != nil {
-			return []dtos.RecipeResponse{}, err
-		}
 		result, err = service.recipeRepo.GetRecipes(filters)
 		if err != nil {
 			return []dtos.RecipeResponse{}, errors.New("recipes not found")

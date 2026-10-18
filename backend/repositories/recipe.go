@@ -5,6 +5,7 @@ import (
 	"burned/backend/dtos"
 	"burned/backend/models"
 	"context"
+	"regexp"
 	"strings"
 	"time"
 
@@ -74,10 +75,10 @@ func (repository *RecipeRepository) GetRecipes(filters dtos.RecipeSearchRequest)
 	filtersMap["visibility"] = "public"
 	// Filtros básicos
 	if filters.Title != "" {
-		filtersMap["title"] = bson.M{"$regex": filters.Title, "$options": "i"}
+		filtersMap["title"] = bson.M{"$regex": regexp.QuoteMeta(strings.TrimSpace(filters.Title)), "$options": "i"}
 	}
 	if filters.Description != "" {
-		filtersMap["description"] = bson.M{"$regex": filters.Description, "$options": "i"}
+		filtersMap["description"] = bson.M{"$regex": regexp.QuoteMeta(strings.TrimSpace(filters.Description)), "$options": "i"}
 	}
 	if filters.DificultyLevel != "" {
 		filtersMap["dificultyLevel"] = bson.M{"$regex": filters.DificultyLevel, "$options": "i"}

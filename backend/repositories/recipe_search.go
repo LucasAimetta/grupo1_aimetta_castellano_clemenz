@@ -147,13 +147,62 @@ func (r *RecipeSearchRepository) SearchRecipes(ctx context.Context, filters dtos
 	var mustClauses []map[string]interface{}
 	var filterClauses []map[string]interface{}
 
-	// Búsqueda por texto (Título, ingredientes, descripción) con tolerancia a errores (fuzziness)
+	// Búsqueda por texto (Título, ingredientes, descripción):
+	// Combinamos match_phrase_prefix (para autocompletado en tiempo real a medida que se escribe),
+	// wildcard para fragmentos intermedios y multi_match con fuzziness para tolerar errores ortográficos.
 	if filters.Title != "" {
+		cleanedTitle := strings.TrimSpace(filters.Title)
+		safeWildcard := strings.ReplaceAll(cleanedTitle, "*", "")
+		safeWildcard = strings.ReplaceAll(safeWildcard, "?", "")
+
+		shouldClauses := []map[string]interface{}{
+			// 1. match_phrase_prefix en título (ej: "tar" -> "Tarta", "tarta de p" -> "Tarta de Pollo")
+			{
+				"match_phrase_prefix": map[string]interface{}{
+					"title": map[string]interface{}{
+						"query":          cleanedTitle,
+						"max_expansions": 50,
+						"boost":          5.0,
+					},
+				},
+			},
+			// 2. multi_match fuzzy en título, descripción e ingredientes
+			{
+				"multi_match": map[string]interface{}{
+					"query":     cleanedTitle,
+					"fields":    []string{"title^4", "description", "ingredients.name^2"},
+					"fuzziness": "AUTO",
+					"boost":     2.0,
+				},
+			},
+			// 3. match_phrase_prefix en ingredientes
+			{
+				"match_phrase_prefix": map[string]interface{}{
+					"ingredients.name": map[string]interface{}{
+						"query":          cleanedTitle,
+						"max_expansions": 30,
+						"boost":          1.5,
+					},
+				},
+			},
+		}
+
+		if safeWildcard != "" {
+			shouldClauses = append(shouldClauses, map[string]interface{}{
+				"wildcard": map[string]interface{}{
+					"title.keyword": map[string]interface{}{
+						"value":            fmt.Sprintf("*%s*", safeWildcard),
+						"case_insensitive": true,
+						"boost":            3.0,
+					},
+				},
+			})
+		}
+
 		mustClauses = append(mustClauses, map[string]interface{}{
-			"multi_match": map[string]interface{}{
-				"query":     filters.Title,
-				"fields":    []string{"title^3", "description", "ingredients.name^2"},
-				"fuzziness": "AUTO",
+			"bool": map[string]interface{}{
+				"should":               shouldClauses,
+				"minimum_should_match": 1,
 			},
 		})
 	}

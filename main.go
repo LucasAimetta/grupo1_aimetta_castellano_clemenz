@@ -69,6 +69,7 @@ func dependencies() {
 		sessionRepo      repositories.SessionRepositoryInterface
 		recipeCacheRepo  repositories.RecipeCacheRepositoryInterface
 		syncRepo         repositories.SyncRepositoryInterface
+		deletedRecipeRepo repositories.DeletedRecipeRepositoryInterface
 	)
 
 	var (
@@ -93,15 +94,16 @@ func dependencies() {
 	sessionRepo = repositories.NewSessionRepository(redisClient)
 	recipeCacheRepo = repositories.NewRecipeCacheRepository(redisClient)
 	syncRepo = repositories.NewSyncRepository(redisClient)
+	deletedRecipeRepo = repositories.NewDeletedRecipeRepository(db)
 
 	// Servicios
 	userService = services.NewUserService(userRepo)
-	recipeService = services.NewRecipeService(recipeRepo, userRepo, recipeSearchRepo, recipeCacheRepo, syncRepo)
+	recipeService = services.NewRecipeService(recipeRepo, userRepo, recipeSearchRepo, recipeCacheRepo, syncRepo, deletedRecipeRepo)
 	savedRecipeService = services.NewSavedRecipeService(savedRecipeRepo, recipeRepo)
 	ratingService = services.NewRatingService(ratingRepo, recipeRepo, recipeCacheRepo)
 	commentService = services.NewCommentService(commentRepo, userRepo, recipeRepo)
 	SessionService = services.NewSessionService(sessionRepo)
-	recipeSyncService = services.NewRecipeSyncService(recipeRepo, recipeSearchRepo, syncRepo)
+	recipeSyncService = services.NewRecipeSyncService(recipeRepo, recipeSearchRepo, syncRepo, deletedRecipeRepo)
 
 	// Iniciar Job Periódico (Cron) de sincronización hacia Elasticsearch
 	_, err := recipeSyncService.StartCronJob(os.Getenv("RECIPE_SYNC_CRON"))

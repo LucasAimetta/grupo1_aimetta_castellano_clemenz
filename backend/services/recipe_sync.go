@@ -10,6 +10,7 @@ import (
 	"burned/backend/repositories"
 
 	"github.com/robfig/cron/v3"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 type RecipeSyncServiceInterface interface {
@@ -18,20 +19,23 @@ type RecipeSyncServiceInterface interface {
 }
 
 type RecipeSyncService struct {
-	recipeRepo repositories.RecipeRepositoryInterface
-	searchRepo repositories.RecipeSearchRepositoryInterface
-	syncRepo   repositories.SyncRepositoryInterface
+	recipeRepo        repositories.RecipeRepositoryInterface
+	searchRepo        repositories.RecipeSearchRepositoryInterface
+	syncRepo          repositories.SyncRepositoryInterface
+	deletedRecipeRepo repositories.DeletedRecipeRepositoryInterface
 }
 
 func NewRecipeSyncService(
 	recipeRepo repositories.RecipeRepositoryInterface,
 	searchRepo repositories.RecipeSearchRepositoryInterface,
 	syncRepo repositories.SyncRepositoryInterface,
+	deletedRecipeRepo repositories.DeletedRecipeRepositoryInterface,
 ) *RecipeSyncService {
 	return &RecipeSyncService{
-		recipeRepo: recipeRepo,
-		searchRepo: searchRepo,
-		syncRepo:   syncRepo,
+		recipeRepo:        recipeRepo,
+		searchRepo:        searchRepo,
+		syncRepo:          syncRepo,
+		deletedRecipeRepo: deletedRecipeRepo,
 	}
 }
 
@@ -58,14 +62,39 @@ func (s *RecipeSyncService) SyncToElasticsearch(ctx context.Context) error {
 		log.Printf(" [Sync Cron] Sincronizadas %d recetas en Elasticsearch (desde %v)", len(recipes), lastSync.Format(time.RFC3339))
 	}
 
-	// 3. Procesar eliminaciones pendientes
-	deletedIDs, err := s.syncRepo.GetDeletedRecipeIDs(ctx)
-	if err == nil && len(deletedIDs) > 0 {
-		if err := s.searchRepo.BulkDeleteRecipes(ctx, deletedIDs); err != nil {
-			log.Printf(" [Sync Cron] Error eliminando recetas de Elasticsearch: %v", err)
-		} else {
+	// 3. Procesar eliminaciones pendientes desde MongoDB (donde process == false)
+	if s.deletedRecipeRepo != nil {
+		unprocessed, err := s.deletedRecipeRepo.GetUnprocessedDeletedRecipes(ctx)
+		if err != nil {
+			log.Printf(" [Sync Cron] Error consultando recetas eliminadas de MongoDB: %v", err)
+		} else if len(unprocessed) > 0 {
+			recipeIDs := make([]string, 0, len(unprocessed))
+			docIDs := make([]primitive.ObjectID, 0, len(unprocessed))
+			for _, item := range unprocessed {
+				recipeIDs = append(recipeIDs, item.RecipeID)
+				docIDs = append(docIDs, item.ID)
+			}
+
+			// Eliminar de Elasticsearch
+			if err := s.searchRepo.BulkDeleteRecipes(ctx, recipeIDs); err != nil {
+				log.Printf(" [Sync Cron] Error eliminando recetas de Elasticsearch: %v", err)
+			} else {
+				// Marcar en MongoDB como process = true
+				if err := s.deletedRecipeRepo.MarkAsProcessed(ctx, docIDs); err != nil {
+					log.Printf(" [Sync Cron] Error marcando recetas como procesadas en MongoDB: %v", err)
+				} else {
+					log.Printf(" [Sync Cron] Eliminadas %d recetas de Elasticsearch y marcadas como procesadas en MongoDB", len(recipeIDs))
+				}
+			}
+		}
+	}
+
+	// 3.1 Limpieza residual de Redis si hubieran IDs anteriores
+	if s.syncRepo != nil {
+		deletedIDs, err := s.syncRepo.GetDeletedRecipeIDs(ctx)
+		if err == nil && len(deletedIDs) > 0 {
+			_ = s.searchRepo.BulkDeleteRecipes(ctx, deletedIDs)
 			_ = s.syncRepo.ClearDeletedRecipeIDs(ctx, deletedIDs)
-			log.Printf(" [Sync Cron] Eliminadas %d recetas de Elasticsearch", len(deletedIDs))
 		}
 	}
 
