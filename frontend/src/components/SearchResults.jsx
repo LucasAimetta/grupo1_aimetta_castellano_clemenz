@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import api from '../api/axios';
-import { Clock, ChefHat, Search, ArrowLeft, Filter, X, Tag } from 'lucide-react';
+import { Clock, ChefHat, Search, ArrowLeft, Filter, X, Tag, Utensils } from 'lucide-react';
 
 const SearchResults = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -13,6 +13,7 @@ const SearchResults = () => {
   const initialDiff = searchParams.get('difficulty') || '';
   const initialTags = searchParams.get('tags') || '';
   const initialDesc = searchParams.get('desc') || '';
+  const initialIngredients = searchParams.get('ingredients') || '';
 
   const [recipes, setRecipes] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -22,7 +23,8 @@ const SearchResults = () => {
     time: initialTime,
     difficulty: initialDiff,
     tags: initialTags,
-    desc: initialDesc
+    desc: initialDesc,
+    ingredients: initialIngredients,
   });
 
   // --- BUSCAR CUANDO CAMBIA LA URL ---
@@ -36,6 +38,7 @@ const SearchResults = () => {
         if (initialDiff) params.append('difficulty', initialDiff);
         if (initialTags) params.append('tags', initialTags);
         if (initialDesc) params.append('desc', initialDesc);
+        if (initialIngredients) params.append('ingredients', initialIngredients);
 
         const res = await api.get(`/recipes/search?${params.toString()}`);
         setRecipes(res.data || []);
@@ -63,12 +66,13 @@ const SearchResults = () => {
     if (filters.difficulty) newParams.set('difficulty', filters.difficulty);
     if (filters.tags) newParams.set('tags', filters.tags);
     if (filters.desc) newParams.set('desc', filters.desc);
+    if (filters.ingredients) newParams.set('ingredients', filters.ingredients);
 
     setSearchParams(newParams);
   };
 
   const clearFilters = () => {
-    setFilters({ time: '', difficulty: '', tags: '', desc: '' });
+    setFilters({ time: '', difficulty: '', tags: '', desc: '', ingredients: '' });
     setSearchParams({ q: query });
   };
 
@@ -102,11 +106,27 @@ const SearchResults = () => {
                         <h3 className="font-bold flex items-center gap-2 text-lg">
                             <Filter className="w-5 h-5 text-orange-500" /> Filtros
                         </h3>
-                        {(filters.time || filters.difficulty || filters.tags || filters.desc) && (
+                        {(filters.time || filters.difficulty || filters.tags || filters.desc || filters.ingredients) && (
                             <button onClick={clearFilters} className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1 font-medium transition">
                                 <X className="w-3 h-3" /> Limpiar
                             </button>
                         )}
+                    </div>
+
+                    {/* Ingredientes */}
+                    <div className="mb-5">
+                        <label className="text-sm font-medium text-zinc-400 mb-2 block flex items-center gap-2">
+                            <Utensils className="w-4 h-4 text-orange-500" /> Ingredientes
+                        </label>
+                        <input 
+                            type="text"
+                            name="ingredients"
+                            value={filters.ingredients}
+                            onChange={handleFilterChange}
+                            placeholder="Ej: queso, tomate..."
+                            className="w-full bg-zinc-950 border border-zinc-700 rounded-lg p-2.5 text-sm focus:border-orange-500 outline-none placeholder-zinc-700 transition"
+                        />
+                        <p className="text-[11px] text-zinc-500 mt-1">Separa con comas para varios ingredientes</p>
                     </div>
 
                     {/* Dificultad */}
@@ -195,10 +215,17 @@ const SearchResults = () => {
                 )}
 
                 {!loading && recipes.length === 0 && (
-                    <div className="text-center py-20 text-zinc-500 bg-zinc-900/30 rounded-2xl border border-dashed border-zinc-800">
+                    <div className="text-center py-20 text-zinc-500 bg-zinc-900/30 rounded-2xl border border-dashed border-zinc-800 p-6">
                         <Search className="w-12 h-12 mx-auto mb-3 opacity-20" />
-                        <p>No encontramos recetas con estos filtros.</p>
-                        <button onClick={clearFilters} className="text-orange-500 hover:underline mt-2">Limpiar filtros</button>
+                        <p className="text-base text-zinc-300 font-medium">No encontramos recetas con estos filtros.</p>
+                        {initialIngredients && (
+                            <p className="text-xs text-zinc-500 mt-1">
+                                No hay recetas que contengan los ingredientes: <span className="text-orange-400 font-semibold">{initialIngredients}</span>
+                            </p>
+                        )}
+                        <button onClick={clearFilters} className="text-orange-500 hover:underline mt-4 text-sm font-semibold block mx-auto">
+                            Limpiar filtros
+                        </button>
                     </div>
                 )}
 

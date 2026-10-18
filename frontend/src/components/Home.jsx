@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api/axios';
-import { Clock, ChefHat, Star, Flame, Trophy, ChevronDown, Heart, Trash2, Edit } from 'lucide-react';
+import { Clock, ChefHat, Star, Flame, Trophy, ChevronDown, Heart, Trash2, Edit, Utensils } from 'lucide-react';
 import FilterBar from './FilterBar';
 
 // --- COMPONENTE TARJETA INDIVIDUAL (OPTIMIZADO CON TRANSPARENCIA) ---
@@ -119,7 +119,7 @@ const Home = () => {
   const [recipes, setRecipes] = useState([]);
   const [topRecipes, setTopRecipes] = useState([]);
   const [savedRecipeIds, setSavedRecipeIds] = useState(new Set());
-  const [filters, setFilters] = useState({ tags: '', difficulty: '', time: 480 });
+  const [filters, setFilters] = useState({ tags: '', difficulty: '', time: 180, ingredients: [] });
   const [visibleCount, setVisibleCount] = useState(9);
 
   // ✅ LÓGICA DE GENERACIÓN DE CHISPAS (BRASAS)
@@ -172,9 +172,22 @@ const Home = () => {
 
   const filteredRecipes = recipes.filter((recipe) => {
     if (recipe.visibility !== 'public') return false; 
-    if (recipe.totalTime > filters.time) return false;
+    if (filters.time && recipe.totalTime > filters.time) return false;
     if (filters.difficulty && recipe.dificultyLevel !== filters.difficulty) return false;
     if (filters.tags && (!recipe.tags || !recipe.tags.includes(filters.tags))) return false;
+
+    // Filtro por ingredientes: la receta debe contener todos los ingredientes indicados
+    if (filters.ingredients && filters.ingredients.length > 0) {
+      if (!recipe.ingredients || recipe.ingredients.length === 0) return false;
+      const allFound = filters.ingredients.every(filterIng => {
+        const target = filterIng.toLowerCase().trim();
+        return recipe.ingredients.some(recipeIng => 
+          recipeIng.name && recipeIng.name.toLowerCase().includes(target)
+        );
+      });
+      if (!allFound) return false;
+    }
+
     return true;
   });
 
@@ -222,7 +235,11 @@ const Home = () => {
         )}
 
         <div className="mb-8 md:mb-12">
-             <FilterBar filters={filters} onFilterChange={setFilters} onClear={() => setFilters({ tags: '', difficulty: '', time: 180 })} />
+             <FilterBar 
+               filters={filters} 
+               onFilterChange={setFilters} 
+               onClear={() => setFilters({ tags: '', difficulty: '', time: 180, ingredients: [] })} 
+             />
         </div>
 
         <section>
@@ -230,17 +247,43 @@ const Home = () => {
                 <h2 className="text-xl md:text-2xl font-black tracking-tight flex items-center gap-2 uppercase italic text-orange-500">
                     <ChefHat className="w-5 h-5 md:w-6 md:h-6" /> Descubre más
                 </h2>
+                <span className="text-xs text-zinc-500 font-medium">
+                    {filteredRecipes.length} {filteredRecipes.length === 1 ? 'receta encontrada' : 'recetas encontradas'}
+                </span>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
-                {filteredRecipes.slice(0, visibleCount).map((recipe) => (
-                    <RecipeCard 
-                        key={recipe.id} 
-                        recipe={recipe} 
-                        onDeleteSuccess={handleDeleteFromUI}
-                        isInitiallySaved={savedRecipeIds.has(recipe.id)} 
-                    />
-                ))}
-            </div>
+
+            {filteredRecipes.length === 0 ? (
+                <div className="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-10 md:p-14 text-center my-6 flex flex-col items-center justify-center backdrop-blur-sm shadow-xl">
+                    <div className="w-16 h-16 rounded-full bg-orange-500/10 border border-orange-500/20 flex items-center justify-center mb-4 text-orange-500">
+                        <Utensils className="w-8 h-8" />
+                    </div>
+                    <h3 className="text-xl font-black text-white mb-2 uppercase tracking-tight">
+                        No se encontraron recetas con estos criterios
+                    </h3>
+                    <p className="text-sm text-zinc-400 max-w-lg mb-6 leading-relaxed">
+                        {filters.ingredients && filters.ingredients.length > 0 
+                            ? `Ninguna receta pública contiene todos los ingredientes indicados (${filters.ingredients.join(', ')}). Prueba quitando alguno o flexibilizando el tiempo y la dificultad.`
+                            : 'Ninguna receta coincide con los filtros aplicados. Intenta ampliar el tiempo máximo o seleccionar otra dificultad.'}
+                    </p>
+                    <button 
+                        onClick={() => setFilters({ tags: '', difficulty: '', time: 180, ingredients: [] })} 
+                        className="bg-orange-500 hover:bg-orange-600 text-black font-bold px-6 py-2.5 rounded-xl text-xs uppercase tracking-wider transition active:scale-95 shadow-lg shadow-orange-500/20"
+                    >
+                        Limpiar todos los filtros
+                    </button>
+                </div>
+            ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
+                    {filteredRecipes.slice(0, visibleCount).map((recipe) => (
+                        <RecipeCard 
+                            key={recipe.id} 
+                            recipe={recipe} 
+                            onDeleteSuccess={handleDeleteFromUI}
+                            isInitiallySaved={savedRecipeIds.has(recipe.id)} 
+                        />
+                    ))}
+                </div>
+            )}
             
             {visibleCount < filteredRecipes.length && (
                 <div className="flex justify-center mt-12 md:mt-16 pb-12">

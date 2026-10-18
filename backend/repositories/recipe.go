@@ -5,6 +5,7 @@ import (
 	"burned/backend/dtos"
 	"burned/backend/models"
 	"context"
+	"strings"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -84,16 +85,29 @@ func (repository *RecipeRepository) GetRecipes(filters dtos.RecipeSearchRequest)
 	if filters.TotalTime != 0 {
 		filtersMap["totalTime"] = bson.M{"$lte": filters.TotalTime}
 	}
+	var andConditions []bson.M
 	if len(filters.Tags) > 0 {
-		var tagConditions []bson.M
 		for _, tag := range filters.Tags {
-
-			tagConditions = append(tagConditions, bson.M{
-				"tags": bson.M{"$regex": tag, "$options": "i"},
-			})
+			trimmed := strings.TrimSpace(tag)
+			if trimmed != "" {
+				andConditions = append(andConditions, bson.M{
+					"tags": bson.M{"$regex": trimmed, "$options": "i"},
+				})
+			}
 		}
-
-		filtersMap["$and"] = tagConditions
+	}
+	if len(filters.Ingredients) > 0 {
+		for _, ing := range filters.Ingredients {
+			trimmed := strings.TrimSpace(ing)
+			if trimmed != "" {
+				andConditions = append(andConditions, bson.M{
+					"ingredients.name": bson.M{"$regex": trimmed, "$options": "i"},
+				})
+			}
+		}
+	}
+	if len(andConditions) > 0 {
+		filtersMap["$and"] = andConditions
 	}
 
 	cursor, err := collection.Find(context.TODO(), filtersMap)

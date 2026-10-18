@@ -42,6 +42,7 @@ type RecipeSearchRequest struct {
 	TotalTime      int      `json:"totalTime" binding:"omitempty"`
 	DificultyLevel string   `json:"dificultyLevel" binding:"omitempty,oneof=easy medium hard"`
 	Tags           []string `json:"tags" binding:"omitempty"`
+	Ingredients    []string `json:"ingredients" binding:"omitempty"`
 }
 
 func RecipeRequestToModel(dto RecipeRequest) models.Recipe {

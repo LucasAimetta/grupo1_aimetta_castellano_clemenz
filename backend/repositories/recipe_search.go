@@ -204,6 +204,21 @@ func (r *RecipeSearchRepository) SearchRecipes(ctx context.Context, filters dtos
 		}
 	}
 
+	// Filtro por ingredientes: la receta debe contener los ingredientes solicitados
+	for _, ing := range filters.Ingredients {
+		trimmedIng := strings.TrimSpace(ing)
+		if trimmedIng != "" {
+			mustClauses = append(mustClauses, map[string]interface{}{
+				"match": map[string]interface{}{
+					"ingredients.name": map[string]interface{}{
+						"query":     trimmedIng,
+						"fuzziness": "AUTO",
+					},
+				},
+			})
+		}
+	}
+
 	boolQuery := map[string]interface{}{}
 	if len(mustClauses) > 0 {
 		boolQuery["must"] = mustClauses

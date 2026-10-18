@@ -188,12 +188,28 @@ func (handler *RecipeHandler) QuickSearch(c *gin.Context) {
 		}
 	}
 
+	// Convertir Ingredientes (admite formato "huevo,harina" o múltiples ?ingredients=)
+	var ingredients []string
+	rawIngredients := c.QueryArray("ingredients")
+	if len(rawIngredients) == 0 && c.Query("ingredients") != "" {
+		rawIngredients = []string{c.Query("ingredients")}
+	}
+	for _, item := range rawIngredients {
+		for _, part := range strings.Split(item, ",") {
+			trimmed := strings.TrimSpace(part)
+			if trimmed != "" {
+				ingredients = append(ingredients, trimmed)
+			}
+		}
+	}
+
 	filters := dtos.RecipeSearchRequest{
 		Title:          title,
 		Description:    description,
 		DificultyLevel: difficulty,
 		TotalTime:      totalTime,
 		Tags:           tags, // <--- Asignamos al DTO
+		Ingredients:    ingredients,
 	}
 
 	recipes, err := handler.service.GetRecipes(filters)
