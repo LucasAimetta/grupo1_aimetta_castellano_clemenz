@@ -1,4 +1,5 @@
 uploads
 .git
 .gitignore
+.env
 README.md
