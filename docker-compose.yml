@@ -35,9 +35,13 @@ services:
     container_name: mi_backend
     ports:
       - "8080:8080" 
+    env_file:
+      - path: .env
+        required: false
     environment:
       - MONGO_URI
       - ELASTIC_URL
+      - ELASTIC_API_KEY
       - FRONTEND_URL
       - PORT
       - REDIS_URL
