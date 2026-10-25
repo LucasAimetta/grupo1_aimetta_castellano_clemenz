@@ -35,8 +35,17 @@ services:
     container_name: mi_backend
     ports:
       - "8080:8080" 
-    env_file:
-      - .env
+    environment:
+      - MONGO_URI
+      - ELASTIC_URL
+      - FRONTEND_URL
+      - PORT
+      - REDIS_URL
+      - SESSION_TTL_HOURS
+      - RECIPE_SYNC_CRON
+      - GOOGLE_CLIENT_ID
+      - GOOGLE_CLIENT_SECRET
+      - GOOGLE_REDIRECT_URL
     depends_on:
       elasticsearch:
         condition: service_healthy
