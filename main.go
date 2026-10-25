@@ -49,8 +49,12 @@ func main() {
 
 	dependencies()
 	mappingRoutes()
-	log.Println("Servidor iniciado en http://localhost:8080")
-	router.Run(":8080")
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+	log.Printf("Servidor iniciado en http://localhost:%s", port)
+	router.Run(":" + port)
 
 }
 
