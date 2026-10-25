@@ -3,6 +3,7 @@ package database
 import (
 	"fmt"
 	"log"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -12,17 +13,33 @@ import (
 
 // NewElasticsearchClient inicializa y retorna el cliente de ES con reintentos
 func NewElasticsearchClient() *elasticsearch.Client {
-	// Leemos la variable de entorno que configuramos en Docker
+	// Leemos la variable de entorno que configuramos en Docker o Doppler
 	elasticURL := os.Getenv("ELASTIC_URL")
 	if elasticURL == "" {
 		// Fallback por si lo corren local sin Docker
 		elasticURL = "http://localhost:9200"
 	}
 
-	cfg := elasticsearch.Config{
-		Addresses: []string{
-			elasticURL,
-		},
+	cfg := elasticsearch.Config{}
+
+	parsedURL, err := url.Parse(elasticURL)
+	if err == nil && parsedURL.User != nil {
+		cfg.Username = parsedURL.User.Username()
+		cfg.Password, _ = parsedURL.User.Password()
+		parsedURL.User = nil
+		cfg.Addresses = []string{parsedURL.String()}
+	} else {
+		cfg.Addresses = []string{elasticURL}
+	}
+
+	if user := os.Getenv("ELASTIC_USERNAME"); user != "" {
+		cfg.Username = user
+	}
+	if pass := os.Getenv("ELASTIC_PASSWORD"); pass != "" {
+		cfg.Password = pass
+	}
+	if apiKey := os.Getenv("ELASTIC_API_KEY"); apiKey != "" {
+		cfg.APIKey = apiKey
 	}
 
 	es, err := elasticsearch.NewClient(cfg)
