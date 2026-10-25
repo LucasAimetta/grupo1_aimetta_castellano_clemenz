@@ -2,7 +2,7 @@ package database
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"os"
 	"time"
 
@@ -18,9 +18,8 @@ func NewMongoDB() *MongoDB {
 	instancia := &MongoDB{}
 	err := instancia.Connect()
 	if err != nil {
-		// Si no podemos conectar a la BD, es mejor detener todo ahora
-		// para ver el error claramente en los logs de Render
-		log.Fatal("❌ Error FATAL al conectar a MongoDB: ", err)
+		slog.Error("Error fatal al conectar a MongoDB", slog.Any("error", err))
+		os.Exit(1)
 	}
 	return instancia
 }
@@ -31,7 +30,7 @@ func (mongoDB *MongoDB) Connect() error {
 
 	// Si está vacía, usamos localhost (solo servirá en tu PC)
 	if uri == "" {
-		log.Println("⚠️ Aviso: Usando conexión local (localhost)")
+		slog.Info("Usando conexión local a MongoDB", slog.String("uri", "mongodb://localhost:27017"))
 		uri = "mongodb://localhost:27017"
 	}
 
@@ -51,7 +50,7 @@ func (mongoDB *MongoDB) Connect() error {
 	}
 
 	mongoDB.Client = client
-	log.Println("✅ Conexión a MongoDB exitosa")
+	slog.Info("Conexión a MongoDB exitosa")
 	return nil
 }
 

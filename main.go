@@ -3,11 +3,11 @@ package main
 import (
 	"burned/backend/database"
 	"burned/backend/handlers"
+	"burned/backend/logger"
 	"burned/backend/middlewares"
 	"burned/backend/repositories"
 	"burned/backend/services"
-	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"time"
 
@@ -29,10 +29,14 @@ var (
 
 func main() {
 	err := godotenv.Load()
+	logger.Init()
+
 	if err != nil {
-		fmt.Println("Aviso: No se encontró el archivo .env, usando variables de entorno de Render")
+		slog.Info("No se encontró el archivo .env, usando variables de entorno del sistema")
 	}
-	router = gin.Default()
+	router = gin.New()
+	router.Use(middlewares.HTTPLoggerMiddleware())
+	router.Use(middlewares.RecoveryMiddleware())
 
 	// CONFIGURACIÓN DE CORS
 	router.Use(cors.New(cors.Config{
@@ -53,7 +57,7 @@ func main() {
 	if port == "" {
 		port = "8080"
 	}
-	log.Printf("Servidor iniciado en http://localhost:%s", port)
+	slog.Info("Servidor iniciado", slog.String("port", port), slog.String("url", "http://localhost:"+port))
 	router.Run(":" + port)
 
 }
@@ -112,7 +116,7 @@ func dependencies() {
 	// Iniciar Job Periódico (Cron) de sincronización hacia Elasticsearch
 	_, err := recipeSyncService.StartCronJob(os.Getenv("RECIPE_SYNC_CRON"))
 	if err != nil {
-		log.Printf("⚠️ Error iniciando cron de sincronización de recetas: %v", err)
+		slog.Error("Error iniciando cron de sincronización de recetas", slog.Any("error", err))
 	}
 
 	// Handlers

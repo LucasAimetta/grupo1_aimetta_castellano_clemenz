@@ -3,7 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"time"
 
@@ -43,7 +43,7 @@ func NewRecipeSyncService(
 func (s *RecipeSyncService) SyncToElasticsearch(ctx context.Context) error {
 	lastSync, err := s.syncRepo.GetLastSyncTime(ctx)
 	if err != nil {
-		log.Printf(" [Sync Cron] No se pudo leer lastSync de Redis: %v. Se sincronizará todo.", err)
+		slog.Warn("No se pudo leer lastSync de Redis, se sincronizará todo", slog.Any("error", err))
 	}
 
 	syncStartTime := time.Now()
@@ -59,14 +59,14 @@ func (s *RecipeSyncService) SyncToElasticsearch(ctx context.Context) error {
 		if err := s.searchRepo.BulkIndexRecipes(ctx, recipes); err != nil {
 			return fmt.Errorf("error indexando bulk en Elasticsearch: %w", err)
 		}
-		log.Printf(" [Sync Cron] Sincronizadas %d recetas en Elasticsearch (desde %v)", len(recipes), lastSync.Format(time.RFC3339))
+		slog.Info("Sincronizadas recetas en Elasticsearch", slog.Int("count", len(recipes)), slog.Time("since", lastSync))
 	}
 
 	// 3. Procesar eliminaciones pendientes desde MongoDB (donde process == false)
 	if s.deletedRecipeRepo != nil {
 		unprocessed, err := s.deletedRecipeRepo.GetUnprocessedDeletedRecipes(ctx)
 		if err != nil {
-			log.Printf(" [Sync Cron] Error consultando recetas eliminadas de MongoDB: %v", err)
+			slog.Error("Error consultando recetas eliminadas de MongoDB", slog.Any("error", err))
 		} else if len(unprocessed) > 0 {
 			recipeIDs := make([]string, 0, len(unprocessed))
 			docIDs := make([]primitive.ObjectID, 0, len(unprocessed))
@@ -77,13 +77,13 @@ func (s *RecipeSyncService) SyncToElasticsearch(ctx context.Context) error {
 
 			// Eliminar de Elasticsearch
 			if err := s.searchRepo.BulkDeleteRecipes(ctx, recipeIDs); err != nil {
-				log.Printf(" [Sync Cron] Error eliminando recetas de Elasticsearch: %v", err)
+				slog.Error("Error eliminando recetas de Elasticsearch", slog.Any("error", err))
 			} else {
 				// Marcar en MongoDB como process = true
 				if err := s.deletedRecipeRepo.MarkAsProcessed(ctx, docIDs); err != nil {
-					log.Printf(" [Sync Cron] Error marcando recetas como procesadas en MongoDB: %v", err)
+					slog.Error("Error marcando recetas como procesadas en MongoDB", slog.Any("error", err))
 				} else {
-					log.Printf(" [Sync Cron] Eliminadas %d recetas de Elasticsearch y marcadas como procesadas en MongoDB", len(recipeIDs))
+					slog.Info("Recetas eliminadas de Elasticsearch y marcadas como procesadas", slog.Int("count", len(recipeIDs)))
 				}
 			}
 		}
@@ -100,7 +100,7 @@ func (s *RecipeSyncService) SyncToElasticsearch(ctx context.Context) error {
 
 	// 4. Actualizar puntero en Redis con el timestamp de inicio de este ciclo
 	if err := s.syncRepo.SetLastSyncTime(ctx, syncStartTime); err != nil {
-		log.Printf(" [Sync Cron] Error actualizando timestamp en Redis: %v", err)
+		slog.Error("Error actualizando timestamp en Redis", slog.Any("error", err))
 	}
 
 	return nil
@@ -121,7 +121,7 @@ func (s *RecipeSyncService) StartCronJob(spec string) (*cron.Cron, error) {
 		defer cancel()
 
 		if err := s.SyncToElasticsearch(ctx); err != nil {
-			log.Printf(" [Sync Cron] Fallo en ciclo de sincronización: %v", err)
+			slog.Error("Fallo en ciclo de sincronización de recetas", slog.Any("error", err))
 		}
 	})
 	if err != nil {
@@ -129,14 +129,14 @@ func (s *RecipeSyncService) StartCronJob(spec string) (*cron.Cron, error) {
 	}
 
 	c.Start()
-	log.Printf(" [Sync Cron] Job periódico iniciado con frecuencia '%s'", spec)
+	slog.Info("Job periódico de sincronización iniciado", slog.String("frequency", spec))
 
 	// Ejecutar una primera sincronización inicial en segundo plano al arrancar
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()
 		if err := s.SyncToElasticsearch(ctx); err != nil {
-			log.Printf(" [Sync Cron] Error en sincronización inicial: %v", err)
+			slog.Error("Error en sincronización inicial", slog.Any("error", err))
 		}
 	}()
 

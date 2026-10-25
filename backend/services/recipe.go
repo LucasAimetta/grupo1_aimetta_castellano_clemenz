@@ -3,7 +3,7 @@ package services
 import (
 	"context"
 	"errors"
-	"log"
+	"log/slog"
 	"os"
 	"strconv"
 	"time"
@@ -103,7 +103,7 @@ func (service *RecipeService) CreateRecipe(recipe dtos.RecipeRequest, idUser str
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			if err := service.searchRepo.IndexRecipe(ctx, r); err != nil {
-				log.Printf("⚠️ [IndexRecipe] Error indexando receta '%s' en Elasticsearch: %v", r.ID.Hex(), err)
+				slog.Error("Error indexando receta en Elasticsearch", slog.String("recipe_id", r.ID.Hex()), slog.Any("error", err))
 			}
 		}(recipeModel)
 	}
@@ -158,7 +158,7 @@ func (service *RecipeService) UpdateRecipe(recipe dtos.RecipeRequest, id string,
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			if err := service.searchRepo.IndexRecipe(ctx, r); err != nil {
-				log.Printf("⚠️ [IndexRecipe] Error actualizando receta '%s' en Elasticsearch: %v", r.ID.Hex(), err)
+				slog.Error("Error actualizando receta en Elasticsearch", slog.String("recipe_id", r.ID.Hex()), slog.Any("error", err))
 			}
 		}(recipeModel)
 	}
@@ -206,7 +206,7 @@ func (service *RecipeService) DeleteRecipe(id string, requesterId string, reques
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			if err := service.searchRepo.DeleteRecipe(ctx, recipeID); err != nil {
-				log.Printf("⚠️ [DeleteRecipe] Error eliminando receta '%s' de Elasticsearch: %v", recipeID, err)
+				slog.Error("Error eliminando receta de Elasticsearch", slog.String("recipe_id", recipeID), slog.Any("error", err))
 			}
 		}(id)
 	}
@@ -214,7 +214,7 @@ func (service *RecipeService) DeleteRecipe(id string, requesterId string, reques
 	// Persistir en MongoDB (colección DeletedRecipes) con process = false para garantizar durabilidad si Redis o ES fallan
 	if service.deletedRecipeRepo != nil {
 		if err := service.deletedRecipeRepo.AddDeletedRecipe(context.Background(), id); err != nil {
-			log.Printf("⚠️ [DeleteRecipe] Error registrando receta eliminada en MongoDB: %v", err)
+			slog.Error("Error registrando receta eliminada en MongoDB", slog.String("recipe_id", id), slog.Any("error", err))
 		}
 	}
 
@@ -241,7 +241,7 @@ func (service *RecipeService) GetRecipes(filters dtos.RecipeSearchRequest) ([]dt
 	if service.searchRepo != nil {
 		result, err = service.searchRepo.SearchRecipes(context.Background(), filters)
 		if err != nil {
-			log.Printf("⚠️ Error consultando Elasticsearch: %v. Activando fallback a MongoDB...", err)
+			slog.Warn("Error consultando Elasticsearch, activando fallback a MongoDB", slog.Any("error", err))
 		}
 	}
 

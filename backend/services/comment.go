@@ -5,7 +5,7 @@ import (
 	"burned/backend/models"
 	"burned/backend/repositories"
 	"errors"
-	"fmt"
+	"log/slog"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -63,26 +63,26 @@ func (service *CommentService) CreateComment(comment dtos.CommentRequest, idUser
 	return response, nil
 }
 func (service *CommentService) DeleteComment(commentId string, requesterId string, requesterRole string) error {
-	fmt.Printf("DEBUG: Iniciando borrado. ID Comentario: %s, Solicitante: %s, Rol: %s\n", commentId, requesterId, requesterRole)
+	slog.Debug("Iniciando borrado de comentario", slog.String("comment_id", commentId), slog.String("requester_id", requesterId), slog.String("role", requesterRole))
 	commentOid, err := primitive.ObjectIDFromHex(commentId)
 	if err != nil {
-		fmt.Println("DEBUG ERROR: Fallo al convertir commentId a hex")
+		slog.Debug("Fallo al convertir commentId a hex", slog.String("comment_id", commentId))
 		return errors.New("invalid id")
 	}
 	userOid, err := primitive.ObjectIDFromHex(requesterId)
 	if err != nil {
-		fmt.Println("DEBUG ERROR: Fallo al convertir requesterId a hex")
+		slog.Debug("Fallo al convertir requesterId a hex", slog.String("requester_id", requesterId))
 		return errors.New("invalid id")
 	}
 	comment, err := service.commentRepo.GetCommentById(commentOid)
 	if err != nil {
-		fmt.Printf("DEBUG ERROR: Comentario no encontrado en DB: %v\n", err)
+		slog.Debug("Comentario no encontrado en DB", slog.String("comment_id", commentId), slog.Any("error", err))
 		return errors.New("comment not found")
 	}
 
 	recipe, err := service.recipeRepo.GetRecipeById(comment.RecipeID)
 	if err != nil {
-		fmt.Printf("DEBUG ERROR: Receta %s no encontrada: %v\n", comment.RecipeID.Hex(), err)
+		slog.Debug("Receta no encontrada", slog.String("recipe_id", comment.RecipeID.Hex()), slog.Any("error", err))
 		return errors.New("associated recipe not found")
 	}
 
@@ -91,13 +91,19 @@ func (service *CommentService) DeleteComment(commentId string, requesterId strin
 	isRecipeOwner := recipe.UserID == userOid
 
 	if !isAdmin && !isOwner && !isRecipeOwner {
-		fmt.Printf("DEBUG: Permisos -> EsDueñoComentario: %t, EsAdmin: %t, EsDueñoReceta: %t\n", isOwner, isAdmin, isRecipeOwner)
+		slog.Warn("Intento no autorizado de eliminar comentario",
+			slog.String("comment_id", commentId),
+			slog.String("requester_id", requesterId),
+			slog.String("role", requesterRole),
+			slog.Bool("is_owner", isOwner),
+			slog.Bool("is_recipe_owner", isRecipeOwner),
+		)
 		return errors.New("unauthorized to delete this comment")
 	}
 
 	result, err := service.commentRepo.DeleteComment(commentOid)
 	if err != nil || result.DeletedCount == 0 {
-		fmt.Println("DEBUG ERROR: Mongo dijo que borró 0 documentos")
+		slog.Debug("Mongo reportó 0 documentos borrados", slog.String("comment_id", commentId))
 		return errors.New("could not delete comment")
 	}
 	return nil

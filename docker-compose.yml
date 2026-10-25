@@ -35,6 +35,8 @@ services:
     container_name: mi_backend
     ports:
       - "8080:8080" 
+    labels:
+      com.datadoghq.ad.logs: '[{"source": "go", "service": "burned-backend"}]'
     env_file:
       - path: .env
         required: false
@@ -50,6 +52,11 @@ services:
       - GOOGLE_CLIENT_ID
       - GOOGLE_CLIENT_SECRET
       - GOOGLE_REDIRECT_URL
+      - LOG_LEVEL
+      - DD_SERVICE
+      - DD_ENV
+      - DD_VERSION
+      - SLOW_REQUEST_THRESHOLD_MS
     depends_on:
       elasticsearch:
         condition: service_healthy
@@ -57,6 +64,19 @@ services:
         condition: service_started
     volumes:
       - ./uploads:/app/uploads 
+
+  datadog-agent:
+    image: gcr.io/datadoghq/agent:7
+    container_name: mi_datadog_agent
+    environment:
+      - DD_API_KEY=${DD_API_KEY}
+      - DD_SITE=${DD_SITE:-datadoghq.com}
+      - DD_LOGS_ENABLED=true
+      - DD_LOGS_CONFIG_CONTAINER_COLLECT_ALL=true
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /proc/:/host/proc/:ro
+      - /sys/fs/cgroup/:/host/sys/fs/cgroup:ro 
 
   frontend:
     build:

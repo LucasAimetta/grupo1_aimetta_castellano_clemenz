@@ -2,7 +2,7 @@ package database
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"net/url"
 	"os"
 	"strings"
@@ -44,7 +44,8 @@ func NewElasticsearchClient() *elasticsearch.Client {
 
 	es, err := elasticsearch.NewClient(cfg)
 	if err != nil {
-		log.Fatalf("Error creando el cliente de Elasticsearch: %s", err)
+		slog.Error("Error creando el cliente de Elasticsearch", slog.Any("error", err))
+		os.Exit(1)
 	}
 
 	// Elasticsearch puede tardar unos segundos en inicializar en Docker.
@@ -52,13 +53,13 @@ func NewElasticsearchClient() *elasticsearch.Client {
 	maxAttempts := 15
 	connected := false
 
-	log.Printf("Intentando conectar con Elasticsearch en %s...", elasticURL)
+	slog.Debug("Intentando conectar con Elasticsearch", slog.String("url", elasticURL))
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		res, err := es.Info()
 		if err == nil && !res.IsError() {
 			res.Body.Close()
 			connected = true
-			log.Println(" Conectado a Elasticsearch exitosamente!")
+			slog.Info("Conexión a Elasticsearch exitosa")
 			break
 		}
 
@@ -66,17 +67,19 @@ func NewElasticsearchClient() *elasticsearch.Client {
 			res.Body.Close()
 		}
 
-		log.Printf("Elasticsearch no está listo aún (intento %d/%d). Reintentando en 2 segundos...", attempt, maxAttempts)
+		slog.Warn("Esperando que Elasticsearch esté listo", slog.Int("attempt", attempt), slog.Int("max_attempts", maxAttempts))
 		time.Sleep(2 * time.Second)
 	}
 
 	if !connected {
-		log.Fatalf("Error: No se pudo conectar a Elasticsearch en %s tras %d intentos.", elasticURL, maxAttempts)
+		slog.Error("No se pudo conectar a Elasticsearch tras superar intentos máximos", slog.String("url", elasticURL), slog.Int("max_attempts", maxAttempts))
+		os.Exit(1)
 	}
 
 	// Aseguramos que el índice 'recipes' exista con el mapeo requerido
 	if err := InitRecipesIndex(es); err != nil {
-		log.Fatalf("Error al inicializar el índice recipes: %s", err)
+		slog.Error("Error al inicializar el índice recipes en Elasticsearch", slog.Any("error", err))
+		os.Exit(1)
 	}
 
 	return es
@@ -91,7 +94,7 @@ func InitRecipesIndex(es *elasticsearch.Client) error {
 	defer res.Body.Close()
 
 	if res.StatusCode == 200 {
-		log.Println(" Índice 'recipes' ya existe en Elasticsearch.")
+		slog.Debug("Índice 'recipes' ya existe en Elasticsearch")
 		return nil
 	}
 
@@ -141,7 +144,7 @@ func InitRecipesIndex(es *elasticsearch.Client) error {
 		return fmt.Errorf("error en respuesta de creación del índice recipes: %s", createRes.String())
 	}
 
-	log.Println(" Índice 'recipes' creado exitosamente con mapeo en español.")
+	slog.Info("Índice 'recipes' creado exitosamente con mapeo en español")
 	return nil
 }
 

@@ -2,7 +2,7 @@ package database
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"os"
 	"strings"
 	"time"
@@ -23,7 +23,8 @@ func NewRedisClient() *redis.Client {
 	if strings.HasPrefix(redisAddr, "redis://") || strings.HasPrefix(redisAddr, "rediss://") {
 		opt, err := redis.ParseURL(redisAddr)
 		if err != nil {
-			log.Fatalf("Error analizando REDIS_URL: %v", err)
+			slog.Error("Error analizando REDIS_URL", slog.Any("error", err))
+			os.Exit(1)
 		}
 		if redisPassword != "" {
 			opt.Password = redisPassword
@@ -38,7 +39,7 @@ func NewRedisClient() *redis.Client {
 	}
 
 	maxAttempts := 15
-	log.Printf("Intentando conectar con Redis en %s...", redisAddr)
+	slog.Debug("Intentando conectar con Redis", slog.String("addr", redisAddr))
 
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -46,15 +47,16 @@ func NewRedisClient() *redis.Client {
 		cancel()
 
 		if err == nil {
-			log.Println("Conectado a Redis exitosamente")
+			slog.Info("Conexión a Redis exitosa")
 			return client
 		}
 
-		log.Printf("Esperando que Redis esté listo (intento %d/%d): %v", attempt, maxAttempts, err)
+		slog.Warn("Esperando que Redis esté listo", slog.Int("attempt", attempt), slog.Int("max_attempts", maxAttempts), slog.Any("error", err))
 		time.Sleep(2 * time.Second)
 	}
 
-	log.Fatalf("Error FATAL al conectar a Redis en %s", redisAddr)
+	slog.Error("Error fatal al conectar a Redis tras superar intentos máximos", slog.String("addr", redisAddr), slog.Int("max_attempts", maxAttempts))
+	os.Exit(1)
 	return nil
 }
 
