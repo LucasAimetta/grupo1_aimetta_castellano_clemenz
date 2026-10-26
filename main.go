@@ -8,6 +8,7 @@ import (
 	"burned/backend/repositories"
 	"burned/backend/services"
 	"log/slog"
+	"net/http"
 	"os"
 	"time"
 
@@ -130,6 +131,7 @@ func dependencies() {
 
 func mappingRoutes() {
 	// --- RUTAS PÚBLICAS
+	router.GET("/health", func(c *gin.Context) { c.String(http.StatusOK, "pong") })
 	router.POST("/login", AuthHandler.LogIn)
 	router.POST("/register", AuthHandler.Register)
 
