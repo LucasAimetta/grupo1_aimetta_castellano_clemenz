@@ -16,12 +16,7 @@ const CreateRecipe = () => {
   const [loading, setLoading] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   
-  // Cloudinary Config
-  const CLOUD_NAME = "dl2inp0cz"; 
-  const UPLOAD_PRESET = "burned_uploads"; 
-
   // ESTADOS
-  const [selectedFile, setSelectedFile] = useState(null); // Archivo para subir
   const [tags, setTags] = useState([]); 
   const [customTagInput, setCustomTagInput] = useState('');
   
@@ -36,18 +31,6 @@ const CreateRecipe = () => {
     step: [{ title: '', descripcion: '', time: 0 }]
   });
 
-  const uploadToLocalServer = async (file) => {
-    const data = new FormData();
-    data.append("file", file);
-    
-    // Usamos tu instancia "api" para mandar el archivo a la nueva ruta de Go
-    const res = await api.post("/upload", data, {
-      headers: { "Content-Type": "multipart/form-data" }
-    });
-    
-    // Devolvemos la URL que gener  nuestro propio backend
-    return res.data.secure_url;
-  };
   // --- HANDLERS GENERALES ---
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -112,11 +95,6 @@ const CreateRecipe = () => {
     try {
         let finalImageUrl = formData.image; 
 
-        // Si el usuario eligió un archivo, lo subimos ahora
-        if (selectedFile) {
-            finalImageUrl = await uploadToLocalServer(selectedFile);
-        }
-
         const payload = {
             ...formData,
             image: finalImageUrl,
@@ -164,7 +142,6 @@ const CreateRecipe = () => {
                 <UniversalImageInput 
                     value={formData.image} 
                     onChange={handleChange} 
-                    onFileSelect={setSelectedFile} 
                 />
              </div>
 

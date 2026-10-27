@@ -11,12 +11,6 @@ const EditRecipe = () => {
   const [saving, setSaving] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
 
-  // Cloudinary Config (Ahora Edit también lo necesita)
-  const CLOUD_NAME = "dl2inp0cz"; 
-  const UPLOAD_PRESET = "burned_uploads"; 
-
-  const [selectedFile, setSelectedFile] = useState(null); // Archivo nuevo (si se cambia)
-  
   const [formData, setFormData] = useState({
     title: '', 
     description: '', 
@@ -54,19 +48,6 @@ const EditRecipe = () => {
     fetchRecipe();
   }, [id, navigate]);
 
-  // --- FUNCIÓN DE SUBIDA ---
-const uploadToLocalServer = async (file) => {
-    const data = new FormData();
-    data.append("file", file);
-    
-    // Usamos tu instancia "api" para mandar el archivo a la nueva ruta de Go
-    const res = await api.post("/upload", data, {
-      headers: { "Content-Type": "multipart/form-data" }
-    });
-    
-    // Devolvemos la URL que gener  nuestro propio backend
-    return res.data.secure_url;
-  };
   // --- HANDLERS GENERALES ---
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -111,11 +92,6 @@ const uploadToLocalServer = async (file) => {
     
     try {
         let finalImageUrl = formData.image;
-
-        // Si seleccionó un archivo NUEVO, lo subimos
-        if (selectedFile) {
-            finalImageUrl = await uploadToLocalServer(selectedFile);
-        }
 
         const payload = {
             ...formData,
@@ -168,7 +144,6 @@ const uploadToLocalServer = async (file) => {
                         <UniversalImageInput 
                             value={formData.image} 
                             onChange={handleChange} 
-                            onFileSelect={setSelectedFile} 
                         />
                     </div>
 
