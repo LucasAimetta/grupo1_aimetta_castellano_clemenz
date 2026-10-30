@@ -32,5 +32,34 @@ Integración de **TensorFlow.js (NSFWJS)** para la moderación automática de co
 ## ☁️ Infraestructura y Despliegue
 
 * **Base de Datos:** **MongoDB Atlas** (NoSQL), modelado para documentos flexibles que permiten estructuras variables en ingredientes y pasos de preparación.
-* **Gestión de Medios:** **Cloudinary** para el almacenamiento y optimización de imágenes en la nube, almacenando únicamente las URLs seguras en la base de datos.
 * **DevOps:** Despliegue continuo en **Render**, con configuración de entornos aislados para Frontend y Backend, y gestión de seguridad mediante variables de entorno y políticas CORS estrictas.
+
+
+## 🔐 Gestión de Secretos con Doppler
+
+Este proyecto utiliza **Doppler** como plataforma centralizada para la gestión segura de variables de entorno y secretos, eliminando la necesidad de exponer archivos `.env` con credenciales sensibles en el repositorio.
+
+La arquitectura de secretos opera bajo dos modalidades:
+
+### 1. Producción (Render)
+El servicio web en producción está integrado nativamente con Doppler mediante una API Key. Cada modificación realizada en el panel de Doppler se sincroniza automáticamente (*push*) hacia las variables de entorno de Render, disparando un despliegue continuo de forma transparente y segura.
+
+### 2. Entorno Local
+Para correr el proyecto localmente utilizando la gestión centralizada de secretos sin exponer claves, el sistema está preparado para ser ejecutado mediante la **Doppler CLI**.
+
+#### Requisitos previos para ejecución local:
+1. Tener instalado [Doppler CLI](https://docs.doppler.com/docs/install-cli).
+2. Contar con una cuenta en Doppler y haber sido invitado al proyecto con permisos de lectura (*Viewer*).
+
+#### Pasos para levantar el proyecto localmente:
+
+1. **Iniciar sesión en Doppler desde la terminal:**
+   ```bash
+   doppler login
+
+2. **Vincular el directorio del proyecto con tu entorno de Doppler:**
+```bash
+doppler setup
+
+3.  Ejecutar el proyecto inyectando los secretos en memoria:
+doppler run -- docker compose up -d --build
